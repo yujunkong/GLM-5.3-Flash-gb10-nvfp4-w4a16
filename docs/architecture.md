@@ -2,19 +2,30 @@
 
 ## Topology
 
-- Node 0 `HEAD` @ `192.168.100.10` → rank 0
-- Node 1 `WORKER` @ `192.168.100.20` → rank 1
-- Network: ConnectX-7 RoCE
-- Engine: vLLM only (`tensor_parallel_size=2`)
+```
+192.168.100.10  HEAD / rank 0
+        │ RoCE (ConnectX-7)
+192.168.100.20  WORKER / rank 1
+TP=2  NNODES=2  engine=vLLM (mentat Ray shim)
+```
 
-## Design notes
+## Control plane
 
-- Not a mechanical shrink of the 4-node upstream recipe
-- Memory / KV / batching sized for unified memory on two Sparks
-- All nodes share the same `HEAD_HOST`
+| Component | Where | Role |
+|-----------|--------|------|
+| `mentatd` | every node (`compose/mentatd.yaml`) | Placement / `ray start` target :6379 |
+| `mentatd-serve` | head optional (`compose/mentatd-serve.yaml`) | Front door :6381 |
+| `glm53` | every node (`compose/glm53.yaml`) | TP rank (head serves :8002) |
 
-## Patches (planned import)
+## Data plane
 
-See `image/patches/` and README § Architecture.
+- Weights: Hugging Face Hub → host `HOST_CACHE/huggingface` → container `/root/.cache/huggingface`
+- No revision pin; no `/var/tmp` model cache
+- NCCL over RoCE (`/dev/infiniband`, `network_mode: host`)
 
-*(Fill with concrete diagrams and data-plane notes after upstream analysis.)*
+## Image
+
+- Tag: `glm53-spark:2x-sm121`
+- Base: `vllm/vllm-openai:glm53-flash-arm64-cu130` (+ upstream SM121 patch stack)
+
+See `docs/upstream-analysis.md` for Copy/Rewrite/Drop decisions.

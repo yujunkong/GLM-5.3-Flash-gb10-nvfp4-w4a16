@@ -338,9 +338,25 @@ NCCL_IB_HCA=rocep1s0f0
 
 ## 8. Build
 
-Image는 upstream GB10/SM121 지원 방식을 우선 사용하고, `image/patches/` + `verify.py`로 patch 적용을 build 시 검증한다.
+Upstream과 동일한 base / patch 시퀀스를 사용한다 (`mmastrac/glm-5.3-flash-4x-gx10`의 `image/`).
 
-(구현 후 구체적인 `docker build` / compose build 명령을 이 섹션에 추가한다.)
+| Pin | Value |
+|-----|--------|
+| Base | `vllm/vllm-openai:glm53-flash-arm64-cu130` |
+| Mentat artifacts | `mmastrac/mentat-artifacts:0.6.0` |
+| FlashInfer | `0.6.18.dev20260819` (nightly; `flashinfer-jit-cache` 제거) |
+| NCCL | `nvidia-nccl-cu13==2.30.7` |
+| CuTeDSL | `nvidia-cutlass-dsl==4.6.2` |
+
+```bash
+# from repo root
+docker build -t glm53-spark:2x-sm121 image/
+
+# or
+docker compose -f compose/glm53.yaml build
+```
+
+Build 중 `image/patches/verify.py`가 SM121 patch / 패키지 pin을 text 기반으로 검증한다 (driver import 없음).
 
 ---
 
@@ -388,33 +404,21 @@ Compose:
 ## 10. Start
 
 ```bash
+cp .env.example .env   # edit per-node ROLE / MENTAT_* ; HEAD_HOST identical on both
+docker build -t glm53-spark:2x-sm121 image/   # on each node (or save/load)
 ./scripts/up.sh
 ```
 
-실행 순서:
-
-1. configuration validation  
-2. host connectivity  
-3. Docker check  
-4. network/interface check  
-5. image check  
-6. worker preparation  
-7. head preparation  
-8. distributed vLLM startup  
-9. rank readiness  
-10. `/health`  
-11. `/v1/models`  
-12. inference self-test  
-
-실패한 단계는 명확히 표시되어야 한다.
+`up.sh` 순서: configuration → connectivity → Docker → interface → image → mentatd → mentatd-serve → worker+head vLLM → `/v1/models` → self-test.
 
 종료:
 
 ```bash
-./scripts/down.sh
+./scripts/down.sh                 # glm53 only
+STOP_MENTAT=1 ./scripts/down.sh   # also mentatd
 ```
 
-관련 container/process를 안전하게 종료한다. **Hugging Face cache는 삭제하지 않는다.**
+Hugging Face cache는 삭제하지 않는다.
 
 ---
 

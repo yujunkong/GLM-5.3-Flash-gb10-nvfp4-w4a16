@@ -6,6 +6,11 @@ This repository is a 2× NVIDIA DGX Spark serving recipe for GLM-5.3-Flash.
 Upstream reference (structure and GB10/SM121 techniques):
   https://github.com/mmastrac/glm-5.3-flash-4x-gx10
 
+The `image/` tree (Dockerfile, patches, entrypoint, status/self-test helpers)
+is adapted from that upstream recipe and uses the same base image tag
+`vllm/vllm-openai:glm53-flash-arm64-cu130`. SM121 patcher attribution:
+`image/patches/LICENSE.MiaAI-Lab` (MiaAI-Lab, MIT).
+
 When importing or adapting files from upstream or related projects, retain
 their original copyright and license headers and follow each project's
 LICENSE / attribution requirements. Related parties may include, among others:

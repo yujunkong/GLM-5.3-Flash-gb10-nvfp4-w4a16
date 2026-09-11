@@ -1,18 +1,20 @@
-# Production baseline override (scaffold)
-# Values below are an already-validated baseline — do not re-A/B casually.
+# Validated production baseline for 2× DGX Spark (do not re-A/B casually).
 
 services:
   glm53:
     environment:
-      MOE_BACKEND: ${MOE_BACKEND:-marlin}
-      ENFORCE_EAGER: ${ENFORCE_EAGER:-1}
-      DISABLE_FLASHINFER_AUTOTUNE: ${DISABLE_FLASHINFER_AUTOTUNE:-1}
-      ASYNC_SCHEDULING: ${ASYNC_SCHEDULING:-1}
-      APPLY_APC_PATCH: ${APPLY_APC_PATCH:-1}
-      MAX_MODEL_LEN: ${MAX_MODEL_LEN:-1048576}
-      MAX_NUM_SEQS: ${MAX_NUM_SEQS:-6}
-      MAX_NUM_BATCHED_TOKENS: ${MAX_NUM_BATCHED_TOKENS:-8192}
-      GPU_MEM_UTIL: ${GPU_MEM_UTIL:-0.88}
-      # Profiler off in production by default
-      # profiler: torch
-      # torch_profiler_dir: /cache/step4
+      - MOE_BACKEND=${MOE_BACKEND:-marlin}
+      - CUDA_GRAPHS=${CUDA_GRAPHS:-0}
+      - ENFORCE_EAGER=${ENFORCE_EAGER:-1}
+      - DISABLE_FLASHINFER_AUTOTUNE=${DISABLE_FLASHINFER_AUTOTUNE:-1}
+      - ASYNC_SCHEDULING=${ASYNC_SCHEDULING:-1}
+      - APPLY_APC_PATCH=${APPLY_APC_PATCH:-1}
+      - MAX_MODEL_LEN=${MAX_MODEL_LEN:-1048576}
+      - MAX_NUM_SEQS=${MAX_NUM_SEQS:-6}
+      - MAX_NUM_BATCHED_TOKENS=${MAX_NUM_BATCHED_TOKENS:-8192}
+      - GPU_MEM_UTIL=${GPU_MEM_UTIL:-0.88}
+      - MTP=${MTP:-0}
+      - DFLASH_TOKENS=${DFLASH_TOKENS:-7}
+      - DFLASH_SELECTOR_TOP_K=${DFLASH_SELECTOR_TOP_K:-32}
+      - DFLASH_WALK_MODE=${DFLASH_WALK_MODE:-edge}
+      - DFLASH2_ACC_PROBE=${DFLASH2_ACC_PROBE:-0}

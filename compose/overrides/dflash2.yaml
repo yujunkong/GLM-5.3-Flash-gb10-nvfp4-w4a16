@@ -1,12 +1,13 @@
-# DFlash2 speculative decoding override (scaffold)
-# Defaults: DFLASH_TOKENS=7 → num_speculative_tokens=7
-# Keep DFlash settings here; do not pin draft model revision.
+# DFlash2 speculative decoding override (2× Spark).
+# Hub draft model — no revision pin. HF cache comes from glm53.yaml HOST_CACHE mount.
 
 services:
   glm53:
     environment:
-      DRAFT_MODEL: ${DRAFT_MODEL:-incoai/GLM-5.3-Flash-DFlash2}
-      DFLASH_TOKENS: ${DFLASH_TOKENS:-7}
-      DFLASH_SELECTOR_TOP_K: ${DFLASH_SELECTOR_TOP_K:-32}
-      DFLASH_WALK_MODE: ${DFLASH_WALK_MODE:-edge}
-      DFLASH2_ACC_PROBE: ${DFLASH2_ACC_PROBE:-0}
+      - DRAFT_MODEL=${DRAFT_MODEL:-incoai/GLM-5.3-Flash-DFlash2}
+      - DFLASH_TOKENS=${DFLASH_TOKENS:-7}
+      - DFLASH_SELECTOR_TOP_K=${DFLASH_SELECTOR_TOP_K:-32}
+      - DFLASH_WALK_MODE=${DFLASH_WALK_MODE:-edge}
+      - DFLASH2_ACC_PROBE=${DFLASH2_ACC_PROBE:-0}
+      # If DRAFT_MODEL changes, update the model field below to match (compose does not nest expand).
+      - 'EXTRA_ARGS=--speculative-config {"method":"dflash","model":"incoai/GLM-5.3-Flash-DFlash2","num_speculative_tokens":7}'

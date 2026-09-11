@@ -2,24 +2,46 @@
 
 ## Prerequisites
 
-- Two DGX Spark nodes (GB10 / SM121), RoCE connectivity
-- Docker / Compose
-- Host Hugging Face cache at `~/.cache/huggingface` (mounted into container)
+- Same repo checkout on both nodes (`REMOTE_ROOT`, default = this path)
+- Docker + NVIDIA runtime; image `glm53-spark:2x-sm121` present on both
+- SSH key auth as `SSH_USER`
+- RoCE fabric addresses on `CLUSTER_SUBNET` (default `192.168.100.`)
+- Host cache at `HOST_CACHE` (default `~/.cache`) including Hugging Face Hub downloads
 
-## Quick path (target)
+## Configure
 
 ```bash
 cp .env.example .env
-# edit HEAD_HOST / WORKER_HOST / NCCL iface names
+# Edit ROLE/NODE_RANK/MENTAT_* per node; HEAD_HOST identical on both
+```
+
+Worker node `.env` differences:
+
+```bash
+ROLE=worker
+NODE_RANK=1
+MENTAT_NODE_IP=192.168.100.20
+MENTAT_PEERS=192.168.100.10:6379
+```
+
+## Build image (once per node, or build once and docker save/load)
+
+```bash
+docker build -t glm53-spark:2x-sm121 image/
+```
+
+## Start / stop
+
+```bash
 ./scripts/up.sh
 ./scripts/status.sh
 ./scripts/self-test.sh
+./scripts/down.sh                 # glm53 only
+STOP_MENTAT=1 ./scripts/down.sh   # also mentatd
 ```
 
-## HF cache policy
+`up.sh` order: config → SSH → docker → iface → image → mentatd → mentatd-serve → glm53 worker+head → `/v1/models` → self-test.
 
-- Host: `~/.cache/huggingface`
-- Container: `/root/.cache/huggingface`
-- No `/var/tmp` model cache, no revision pinning
+## Cold start
 
-*(Expand with compose profiles and per-node ROLE steps after launcher implementation.)*
+First boot may spend a long time on Triton/JIT. Treat the first completion as warmup (excluded from benchmarks).
