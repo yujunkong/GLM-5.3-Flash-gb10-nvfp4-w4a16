@@ -1,0 +1,50 @@
+# Local secrets / overrides — never commit
+.env
+.env.local
+*.env.local
+
+# Hugging Face / model caches (must not live in-repo)
+model/
+models/
+.cache/
+*.safetensors
+*.bin
+*.gguf
+*.pt
+*.pth
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+
+# Docker / runtime
+*.log
+logs/
+tmp/
+/var/tmp/
+
+# Profiler output (keep separate from HF cache)
+/cache/
+profiler/
+torch_profiler/
+
+# Build artifacts
+*.o
+*.so
+dist/
+build/

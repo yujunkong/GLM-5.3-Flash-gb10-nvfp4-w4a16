@@ -1,0 +1,18 @@
+# 2× DGX Spark / TP=2 compose (scaffold)
+# Full services will be filled after upstream image/compose analysis.
+# Do not introduce TP=4 or 4-node host lists here.
+
+name: glm53-flash-2x-spark
+
+services:
+  # Placeholder: head (rank 0) and worker (rank 1) will be defined for TP=2.
+  # Mount host HF cache: ${HF_CACHE:-$HOME/.cache/huggingface}:/root/.cache/huggingface
+  glm53:
+    profiles: ["scaffold"]
+    image: glm53-flash-gb10:local
+    build:
+      context: ../image
+      dockerfile: Dockerfile
+    env_file:
+      - ../.env
+    # TODO: network_mode / extra_hosts / NCCL device mapping for RoCE

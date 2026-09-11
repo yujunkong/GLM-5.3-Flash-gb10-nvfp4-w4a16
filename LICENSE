@@ -1,0 +1,23 @@
+Third-Party Notice and License Placeholder
+==========================================
+
+This repository is a 2× NVIDIA DGX Spark serving recipe for GLM-5.3-Flash.
+
+Upstream reference (structure and GB10/SM121 techniques):
+  https://github.com/mmastrac/glm-5.3-flash-4x-gx10
+
+When importing or adapting files from upstream or related projects, retain
+their original copyright and license headers and follow each project's
+LICENSE / attribution requirements. Related parties may include, among others:
+
+  - mmastrac / glm-5.3-flash-4x-gx10 contributors
+  - MiaAI-Lab
+  - tonyd2wild
+  - incoai
+  - canada-quant
+  - vLLM
+  - FlashInfer
+
+Original repository-owned scaffolding in this tree is provided without
+warranty. Replace this file with the definitive project LICENSE once
+license review of imported code is complete.

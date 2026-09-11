@@ -1,0 +1,12 @@
+# DFlash2 speculative decoding override (scaffold)
+# Defaults: DFLASH_TOKENS=7 → num_speculative_tokens=7
+# Keep DFlash settings here; do not pin draft model revision.
+
+services:
+  glm53:
+    environment:
+      DRAFT_MODEL: ${DRAFT_MODEL:-incoai/GLM-5.3-Flash-DFlash2}
+      DFLASH_TOKENS: ${DFLASH_TOKENS:-7}
+      DFLASH_SELECTOR_TOP_K: ${DFLASH_SELECTOR_TOP_K:-32}
+      DFLASH_WALK_MODE: ${DFLASH_WALK_MODE:-edge}
+      DFLASH2_ACC_PROBE: ${DFLASH2_ACC_PROBE:-0}
