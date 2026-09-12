@@ -1,0 +1,8 @@
+# Experiment only — Phase D expandable_segments OFF.
+services:
+  glm53-head:
+    environment:
+      PYTORCH_CUDA_ALLOC_CONF: "garbage_collection_threshold:0.8"
+  glm53-worker:
+    environment:
+      PYTORCH_CUDA_ALLOC_CONF: "garbage_collection_threshold:0.8"

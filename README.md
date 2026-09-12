@@ -26,15 +26,18 @@ Upstream은 4× ASUS GX10 / GB10, TP=4, 4-node topology 대상이다. 본 repo�
 - **기준 upstream**: `mmastrac/glm-5.3-flash-4x-gx10`의 GB10/SM121 해결 방법을 참고하되, 4-node 전용 요소는 제거
 - **모델 경로**: Hugging Face Hub → `~/.cache/huggingface` → container `/root/.cache/huggingface` → vLLM
 
-### 현재 vs 목표 (2026-09-11 실측)
+### 현재 vs 목표 (2026-09-12 실측, W4A16 Golden)
 
 | | 목표 | 현재 (Golden) | 상태 |
 |--|------|---------------|------|
-| Decode (soak) | 40–50 tok/s | **~33–36 tok/s** | 미달 |
-| Accept (`/metrics`) | 50–70% | **~43–45%** | 미달 |
+| Decode (soak) | 40–50 tok/s | **~33–36 tok/s** (60m med **33.5**) | 미달 — **코드 패치 천장** |
+| Accept (`/metrics`) | 50–70% | **~0.40–0.45** | 미달 — draft mismatch (B2) |
 | C6 concurrent | stretch | **~81–82 tok/s** | concurrent는 양호 |
 
-원인·적용 목록·다음 단계: [`docs/applied-stack.md`](docs/applied-stack.md), 수치: [`docs/benchmark.md`](docs/benchmark.md) / [`benchmarks/RESULTS.md`](benchmarks/RESULTS.md).
+checklist2 A/B(sparse reuse KEEP +0.7%; logits64 / expandable-OFF REVERT) 후에도 게이트 미달.  
+이 이상은 **NVFP4 lane** 또는 **W4A16-aligned draft** 없이는 의미 있는 상승이 나오지 않는다.
+
+원인·적용 목록: [`docs/applied-stack.md`](docs/applied-stack.md) · 수치: [`docs/benchmark.md`](docs/benchmark.md) / [`benchmarks/RESULTS.md`](benchmarks/RESULTS.md) · 2026-09-12: [`evidence/final/optimization-report-20260912.md`](evidence/final/optimization-report-20260912.md)
 
 ### 핵심 설계 원칙
 
@@ -479,18 +482,29 @@ HEAD, WORKER, GPU/rank, TP, NNODES, MODEL, DRAFT MODEL, vLLM version, CUDA versi
 
 ### 실측 요약 (2× Spark, clocks 2400, Golden `PROBE=0`)
 
-| Label | Soak med tok/s | Accept | C1 | C2 | C6 |
-|-------|----------------|--------|----|----|-----|
-| `upstream-baseline-clocks2400` | **35.87** | **0.430** | 33.5 | 43.9 | 81.0 |
-| `golden-post-acc-debug` | 32.55* | **0.448** | 44.7 | 46.0 | **82.1** |
+| Label | Soak med tok/s | Accept | C1 | C2 | C6 | Notes |
+|-------|----------------|--------|----|----|-----|-------|
+| `upstream-baseline-clocks2400` | **35.87** | **0.430** | 33.5 | 43.9 | 81.0 | 초기 Golden |
+| `golden-post-acc-debug` | 32.55* | **0.448** | 44.7 | 46.0 | **82.1** | *3-run 노이즈 |
+| `20260912-baseline` (Phase0, 3-run) | **33.58** | ~0.416 | — | — | — | tag `glm53-w4a16-baseline-20260912` |
+| `20260912-longrun-60m` | **33.50** | **0.400** | — | — | — | 225 runs; clock 안정, mem↑ 없음 |
+| `20260912-sparse-reuse` KEEP | **33.54** (+0.70% vs ctrl) | **0.412** | — | — | — | kpool workspace reuse |
+| `20260912-keep-confirm` (3m) | **33.63** | **0.422** | — | — | — | land 후 확인 |
 
-\*3-run median 노이즈. soak mean ≈ 33–35. **목표 40–50 / 0.50–0.70 미달.**
+**목표 40–50 / 0.50–0.70 미달.** W4A16 + 현 DFlash2에서 checklist2 코드/allocator A/B는 소진됨.
+
+| 2026-09-12 A/B | Δ TPS | Accept | Verdict |
+|----------------|-------|--------|---------|
+| sparse buffer reuse | **+0.70%** | 유지 | **KEEP** (`main`) |
+| logits 64 MiB | −2.77% | +0.005 | REVERT |
+| expandable_segments OFF | −3.99% | −0.014 | REVERT (ON 유지) |
+| top-k fallback rewrite | — | — | PATCH=NONE |
 
 Accept 진단 (`PROBE=1`): first-reject **A 12.9% / B 87.1% / C 0%**, B 중 **B2 ≈ 90%**  
-→ 서빙 노브로 승인율 0.50+ 불가. draft–target 정렬 필요.
+→ 서빙 노브로 승인율 0.50+ 불가. draft–target 정렬 또는 NVFP4 lane 필요.
 
-- 원본: `benchmarks/<label>/`, 요약 [`benchmarks/RESULTS.md`](benchmarks/RESULTS.md), [`docs/benchmark.md`](docs/benchmark.md)
-- 재실행: `bash bench/bench_config.sh <label>`
+- 원본: `benchmarks/<label>/`, `evidence/*-20260912/`, 요약 [`benchmarks/RESULTS.md`](benchmarks/RESULTS.md), [`docs/benchmark.md`](docs/benchmark.md)
+- 재실행: `bash bench/bench_config.sh <label>` / `bench/soak_timed.py`
 - **미측정 숫자는 기재하지 않는다**
 
 ---
@@ -517,14 +531,15 @@ Accept 진단 (`PROBE=1`): first-reject **A 12.9% / B 87.1% / C 0%**, B 중 **B2
 ## 15. Known limitations & current blockers
 
 - 본 recipe는 **2× DGX Spark / TP=2 전용**. 4-node / TP=4는 지원하지 않는다.
-- **성능 게이트 미달 (현재 핵심 문제)**
-  1. **승인율 ~43–45%** — W4A16 target + `incoai` DFlash2 정합 한계. reject **B2 지배**. `TOP_K`/`WALK`로 50–70% 불가.
-  2. **Soak decode ~33–36 tok/s** — 목표 40–50 미달. accept 천장과 연동.
+- **성능 게이트 미달 — W4A16 코드 패치 사이클 종료 (2026-09-12)**
+  1. **승인율 ~0.40–0.45** — W4A16 target + `incoai` DFlash2 정합 한계. reject **B2 지배**. `TOP_K`/`WALK`로 50–70% 불가.
+  2. **Soak decode ~33–36 tok/s** — 목표 40–50 미달. accept 천장과 연동; allocator/sparse 추가 A/B는 **+0.7% 수준 또는 악화**.
   3. Upstream NVFP4 문서의 높은 accept는 **이 스택에 그대로 적용되지 않음**.
+  4. **다음 헤드룸**: NVFP4 production lane 또는 W4A16-aligned draft (코드 패치 범위 밖).
 - `DFLASH2_ACC_PROBE=1`은 분석 전용 (~−10% soak). 운영 기본은 `0`.
 - `MAX_MODEL_LEN=1048576`은 설정값; 초장문 실측은 별도.
 - SM121 native cubin 부재만으로 full CUDA/FlashInfer rebuild나 custom `.so` 교체를 하지 않는다.
-- 적용 목록·다음 단계: [`docs/applied-stack.md`](docs/applied-stack.md).
+- 적용 목록: [`docs/applied-stack.md`](docs/applied-stack.md) · 최적화 보고서: [`evidence/final/optimization-report-20260912.md`](evidence/final/optimization-report-20260912.md).
 
 ---
 

@@ -1,0 +1,8 @@
+# Experiment only — do not merge as Golden. Phase C logits budget A/B.
+services:
+  glm53-head:
+    environment:
+      VLLM_SPARSE_INDEXER_MAX_LOGITS_MB: "64"
+  glm53-worker:
+    environment:
+      VLLM_SPARSE_INDEXER_MAX_LOGITS_MB: "64"
