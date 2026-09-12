@@ -48,11 +48,18 @@ echo "[up] sync repo (compose/patches/runtime/env) to worker"
 rsync -az --delete --exclude '.git' --exclude 'reference-notes' --exclude '__pycache__' \
   "$ROOT/" "${SSH_USER}@${WORKER_HOST}:${REMOTE_ROOT}/"
 
+# Optional compose fragments (gate_linear A/B, etc.)
+_COMPOSE_F=(-f compose/glm53.yaml)
+if [[ "${APPLY_GATE_LINEAR:-0}" == "1" ]]; then
+  _COMPOSE_F+=(-f compose/overrides/gate-linear.yaml)
+  echo "[up] APPLY_GATE_LINEAR=1 → compose/overrides/gate-linear.yaml"
+fi
+
 echo "[up] worker (rank 1)"
-ssh_n "$WORKER_HOST" "cd '$REMOTE_ROOT' && docker compose -f compose/glm53.yaml --profile worker --env-file .env --env-file .env.lane up -d --force-recreate"
+ssh_n "$WORKER_HOST" "cd '$REMOTE_ROOT' && docker compose ${_COMPOSE_F[*]} --profile worker --env-file .env --env-file .env.lane up -d --force-recreate"
 sleep 20
 echo "[up] head (rank 0)"
-docker compose -f compose/glm53.yaml --profile head --env-file .env --env-file .env.lane up -d --force-recreate
+docker compose "${_COMPOSE_F[@]}" --profile head --env-file .env --env-file .env.lane up -d --force-recreate
 
 echo "[up] wait for http://${HEAD_HOST}:${API_PORT}/health"
 for i in $(seq 1 180); do

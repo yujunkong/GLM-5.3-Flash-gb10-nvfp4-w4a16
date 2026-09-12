@@ -1,0 +1,9 @@
+# Optional: mount GB10/GLM-5 gate_linear (DSV3 + (6144,256) fp32 shapes).
+# Enabled when scripts/up.sh sees APPLY_GATE_LINEAR=1.
+services:
+  glm53-head:
+    volumes:
+      - ../patches/gate_linear.py:/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/router/gate_linear.py:ro
+  glm53-worker:
+    volumes:
+      - ../patches/gate_linear.py:/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/router/gate_linear.py:ro
