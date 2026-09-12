@@ -38,6 +38,7 @@ def spec_decode_rejection_warmup(worker: Worker) -> None:
     num_spec = spec_config.num_speculative_tokens
     if num_spec <= 0 or vocab_size <= 0:
         _warmup_prepare_dflash_inputs_kernel(worker)
+        _warmup_kpool_tail_seed_kernel(worker)
         return
 
     # Mirror the constexpr-relevant flags the runtime uses.
@@ -120,6 +121,8 @@ def spec_decode_rejection_warmup(worker: Worker) -> None:
     # that decode + OpenCode prefills actually hit.
     _warmup_prepare_dflash_inputs_kernel(worker)
     _warmup_copy_page_indices_kernel(worker)
+    # Comment: first real prefill otherwise JITs _kpool_tail_seed_kernel.
+    _warmup_kpool_tail_seed_kernel(worker)
 
 
 def _dflash_prepare_block_sizes(num_query_per_req: int) -> list[tuple[int, int, int]]:
@@ -362,3 +365,43 @@ def _warmup_copy_page_indices_kernel(worker: Worker) -> None:
             "Skipping _copy_page_indices_kernel warmup.",
             exc_info=True,
         )
+
+
+def _warmup_kpool_tail_seed_kernel(worker: Worker) -> None:
+    """Pre-compile GLM5 kpool tail-seed Triton kernel (HEAD_DIM/KPOOL consts)."""
+    try:
+        from vllm.models.glm5next.nvidia.ops.kpool_compress import (
+            INDEX_HEAD_DIM,
+            kpool_seed_tail_cache,
+        )
+    except Exception:
+        return
+
+    # Comment: match common GLM5 indexer kpool sizes seen on this stack.
+    device = torch.device("cuda")
+    head_dim = int(INDEX_HEAD_DIM)
+    for kpool in (4, 8, 16):
+        n = max(kpool * 2, 16)
+        key = torch.zeros((n, head_dim), dtype=torch.bfloat16, device=device)
+        score = torch.zeros((n, head_dim), dtype=torch.bfloat16, device=device)
+        # One full pool of valid slots then padding (-1) so the kernel path runs.
+        tslot = torch.full((n,), -1, dtype=torch.int32, device=device)
+        tslot[:kpool] = torch.arange(kpool, dtype=torch.int32, device=device)
+        num_blocks = 2
+        # Comment: kernel addresses flat [blk, {k,score}, pos%kpool, dim] via ptr math.
+        tail = torch.zeros(
+            (num_blocks * 2 * kpool * head_dim,),
+            dtype=torch.bfloat16,
+            device=device,
+        )
+        try:
+            kpool_seed_tail_cache(tail, key, score, tslot, kpool, head_dim)
+        except Exception:
+            logger.warning(
+                "Skipping kpool_seed_tail_cache warmup (kpool=%s).",
+                kpool,
+                exc_info=True,
+            )
+            return
+    torch.cuda.synchronize()
+    logger.info("Warmed _kpool_tail_seed_kernel for kpool in {4,8,16}.")
