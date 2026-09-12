@@ -27,5 +27,14 @@ TP=2  NNODES=2  engine=vLLM (mentat Ray shim)
 
 - Tag: `glm53-spark:2x-sm121`
 - Base: `vllm/vllm-openai:glm53-flash-arm64-cu130` (+ upstream SM121 patch stack)
+- Serving path: **mp TP=2** (compose `glm53.yaml` + `image/entrypoint.sh`)
 
-See `docs/upstream-analysis.md` for Copy/Rewrite/Drop decisions.
+## Performance status
+
+| Gate | Target | Current | Doc |
+|------|--------|---------|-----|
+| Decode | 40–50 tok/s | ~33–36 | `docs/benchmark.md` |
+| Accept | 50–70% | ~43–45% | `docs/applied-stack.md` |
+
+See `docs/upstream-analysis.md` for Copy/Rewrite/Drop decisions.  
+Applied overlays / blockers: `docs/applied-stack.md`.

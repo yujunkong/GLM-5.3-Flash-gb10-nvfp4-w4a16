@@ -11,7 +11,7 @@
 #
 services:
   mentatd:
-    image: ${IMAGE:-mmastrac/mentatd:0.7.0}
+    image: ${MENTAT_IMAGE:-mmastrac/mentatd:0.7.0}
     container_name: mentatd
     # Host networking on purpose: the control port must be reachable both at
     # 127.0.0.1:6379 (agents in host-network model containers) and on the

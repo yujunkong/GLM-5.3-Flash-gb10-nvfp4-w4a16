@@ -36,6 +36,9 @@ venv/
 *.log
 logs/
 tmp/
+runtime/apc/
+runtime/kv/
+runtime/sm90/
 /var/tmp/
 
 # Profiler output (keep separate from HF cache)
@@ -48,3 +51,7 @@ torch_profiler/
 *.so
 dist/
 build/
+
+# Local bench outputs
+benchmarks/*/
+!benchmarks/.gitkeep

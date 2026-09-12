@@ -2,23 +2,27 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# Serve GLM-5.3-Flash (NVFP4) on 2× DGX Spark / GB10 over RoCE (TP=2).
-# Adapted from mmastrac/glm-5.3-flash-4x-gx10 entrypoint: fabric discovery,
-# mentat/ray join, and vllm serve are preserved. This repo defaults to a
-# Hugging Face Hub model id (no --revision pin) with the standard HF cache
-# under /root/.cache/huggingface. Local MODEL_DIR paths still work.
+# Serve canada-quant/glm-5.3-w4a16-mtp on 2× DGX Spark / GB10 (TP=2).
 #
-# Deliberately loads PLAIN SAFETENSORS (no sharded-state cache) — same
-# correctness rationale as upstream.
+# Image/patches: adapted from mmastrac/glm-5.3-flash-4x-gx10 (SM121).
+# Distributed default for THIS repo: mp + nnodes=2 (validated on this fabric).
+# mentat/ray path kept behind DIST_BACKEND=ray for upstream parity experiments.
+#
+# Model: Hugging Face Hub id by default (no --revision). Standard HF cache
+# under /root/.cache/huggingface. Local absolute MODEL paths still work.
 # ---------------------------------------------------------------------------
 
 TP="${TP:-2}"
+NNODES="${NNODES:-2}"
 MTP="${MTP:-0}"
 RANK="${NODE_RANK:-0}"
 ROLE="${ROLE:-head}"
+DIST_BACKEND="${DIST_BACKEND:-mp}"
+MASTER_ADDR="${MASTER_ADDR:-${HEAD_HOST:-192.168.100.10}}"
+MASTER_PORT="${MASTER_PORT:-29521}"
 # Prefer MODEL (HF id or path). MODEL_DIR kept for upstream-compat local mounts.
 MODEL="${MODEL:-${MODEL_DIR:-canada-quant/glm-5.3-w4a16-mtp}}"
-SERVED="${SERVED_NAME:-glm53}"
+SERVED="${SERVED_NAME:-glm-5.3-flash}"
 # Never pin a Hub revision via env in this recipe.
 unset MODEL_REVISION || true
 
@@ -33,7 +37,7 @@ unset MODEL_REVISION || true
 # An uncabled port powers down completely -- no PCI device, no
 # /sys/class/infiniband entry. That is not a missing driver and no amount of
 # modprobe fixes it, so a node reports only the ports it actually has.
-CLUSTER_SUBNET="${CLUSTER_SUBNET:-10.100.0.}"
+CLUSTER_SUBNET="${CLUSTER_SUBNET:-192.168.100.}"
 _cxip=$(ip -o -4 addr show 2>/dev/null | awk -v p="$CLUSTER_SUBNET" \
         '$4 ~ "^"p {split($4,a,"/"); print a[1]; exit}')
 
@@ -369,72 +373,59 @@ RAY_OBJECT_STORE_MEMORY="${RAY_OBJECT_STORE_MEMORY:-4294967296}"
 # there is no honest value when the weights alone are 73% of the pool.
 export RAY_memory_monitor_refresh_ms="${RAY_MEMORY_MONITOR_REFRESH_MS:-0}"
 
-# --- service announcement (mentat-serve) ------------------------------------
-# The agent reads these at `ray start` and carries them in its registration.
-# mentat-serve routes by what is announced, and probes it before believing
-# it. Purely additive: an image or daemon without this support ignores them.
-# Every rank announces its management MCP (the status server runs on both
-# roles). Only the head announces the OpenAI endpoint: a worker holds a TP
-# rank and serves nothing, and a URL announced from it would route requests
-# at a port with nothing behind it. The provider names the engine behind that
-# endpoint, which two servers answering /v1/chat/completions do not reveal by
-# answering it, so it goes on the rank that announces the endpoint.
-export MENTAT_MCP_API="${MENTAT_MCP_API:-http://${VLLM_HOST_IP}:${STATUS_PORT:-8082}/mcp}"
-if [[ "$ROLE" == "worker" ]]; then
-  unset MENTAT_OPENAI_API
-else
-  export MENTAT_OPENAI_API="${MENTAT_OPENAI_API:-http://${VLLM_HOST_IP}:${API_PORT:-8002}/v1}"
-  export MENTAT_MODEL_PROVIDER="${MENTAT_MODEL_PROVIDER:-vllm}"
-fi
-
-# --- worker: join and block -------------------------------------------------
-# Under mentat, `ray start --block --address` retries forever, so the
-# head-first ordering below stopped mattering -- start either side first. The
-# stage-file dance is kept because it still reads well on the status page,
-# and because a real-ray fallback image (where `ray start --address` does NOT
-# retry) needs the head up first.
-if [[ "$ROLE" == "worker" ]]; then
-  stage joining
-  ( for _ in $(seq 1 120); do
-      if ray status --address="$RAY_ADDRESS" >/dev/null 2>&1; then
-        stage worker-ready; break
-      fi
-      sleep 5
-    done ) &
-  exec ray start --block --address="$RAY_ADDRESS" \
-            --object-store-memory="$RAY_OBJECT_STORE_MEMORY"
-fi
-
-# --- head -------------------------------------------------------------------
-ray start --head --node-ip-address="$VLLM_HOST_IP" --port=6379 \
-          --object-store-memory="$RAY_OBJECT_STORE_MEMORY"
-
-# Starting the engine without its workers reaches NCCL and dies there
-# ("invalid usage"), so this waits rather than giving up and proceeding. The
-# stage stays visible on the status page throughout. WORKER_WAIT_S bounds it;
-# 0 waits forever, which is what a switch reboot wants.
-stage waiting-workers
-_waited=0
-while :; do
-  have=$(ray status 2>/dev/null | grep -oE '[0-9.]+/[0-9.]+ GPU' | cut -d/ -f2 | cut -d. -f1 || echo 0)
-  [[ "${have:-0}" -ge "$TP" ]] && break
-  if (( ${WORKER_WAIT_S:-0} > 0 && _waited >= ${WORKER_WAIT_S:-0} )); then
-    echo "FATAL: only ${have:-0} of "$TP" GPUs after ${_waited}s" >&2
-    exit 1
+# --- distributed bring-up -------------------------------------------------
+# mp (default): both ranks run vllm serve; worker is --headless.
+# ray: upstream mentat path (optional; not the production path for this repo).
+if [[ "$DIST_BACKEND" == "ray" ]]; then
+  export MENTAT_MCP_API="${MENTAT_MCP_API:-http://${VLLM_HOST_IP}:${STATUS_PORT:-8082}/mcp}"
+  if [[ "$ROLE" == "worker" ]]; then
+    unset MENTAT_OPENAI_API
+  else
+    export MENTAT_OPENAI_API="${MENTAT_OPENAI_API:-http://${VLLM_HOST_IP}:${API_PORT:-8000}/v1}"
+    export MENTAT_MODEL_PROVIDER="${MENTAT_MODEL_PROVIDER:-vllm}"
   fi
-  (( _waited % 60 )) || echo "waiting for "$TP" GPUs, have ${have:-0} (${_waited}s)"
-  sleep 5
-  _waited=$(( _waited + 5 ))
-done
+  if [[ "$ROLE" == "worker" ]]; then
+    stage joining
+    ( for _ in $(seq 1 120); do
+        if ray status --address="$RAY_ADDRESS" >/dev/null 2>&1; then
+          stage worker-ready; break
+        fi
+        sleep 5
+      done ) &
+    exec ray start --block --address="$RAY_ADDRESS" \
+              --object-store-memory="$RAY_OBJECT_STORE_MEMORY"
+  fi
+  ray start --head --node-ip-address="$VLLM_HOST_IP" --port=6379 \
+            --object-store-memory="$RAY_OBJECT_STORE_MEMORY"
+  stage waiting-workers
+  _waited=0
+  while :; do
+    have=$(ray status 2>/dev/null | grep -oE '[0-9.]+/[0-9.]+ GPU' | cut -d/ -f2 | cut -d. -f1 || echo 0)
+    [[ "${have:-0}" -ge "$TP" ]] && break
+    if (( ${WORKER_WAIT_S:-0} > 0 && _waited >= ${WORKER_WAIT_S:-0} )); then
+      echo "FATAL: only ${have:-0} of $TP GPUs after ${_waited}s" >&2
+      exit 1
+    fi
+    (( _waited % 60 )) || echo "waiting for $TP GPUs, have ${have:-0} (${_waited}s)"
+    sleep 5
+    _waited=$(( _waited + 5 ))
+  done
+else
+  echo "distributed: backend=mp nnodes=$NNODES rank=$RANK master=${MASTER_ADDR}:${MASTER_PORT} role=$ROLE"
+  if [[ "$ROLE" == "worker" || "$RANK" != "0" ]]; then
+    stage joining
+  else
+    stage waiting-workers
+  fi
+fi
 
-# GLM-5.3-Flash carries an MTP head (num_nextn_predict_layers: 1). OFF by
-# default here: it is another moving part on an architecture nothing has served
-# on this hardware before, and the point of the first boot is to find out whether
-# the base kernels run at all. The vendor recipe suggests k=5. Turn it on only
-# once the model serves without it, and judge it on acceptance LENGTH rather
-# than acceptance rate.
+# Speculative decoding: MTP or DFlash2 (Hub draft id / local path via DRAFT_MODEL).
 SPEC=()
-if [[ "$MTP" == "1" ]]; then
+if [[ "${SPEC_METHOD:-dflash}" == "dflash" ]]; then
+  DRAFT="${DRAFT_MODEL:-incoai/GLM-5.3-Flash-DFlash2}"
+  SPEC=(--speculative-config "{\"method\":\"dflash\",\"model\":\"${DRAFT}\",\"num_speculative_tokens\":${DFLASH_TOKENS:-7}}")
+  echo "speculative: ${SPEC[*]}"
+elif [[ "$MTP" == "1" || "${SPEC_METHOD:-}" == "mtp" ]]; then
   SPEC=(--speculative-config "{\"method\":\"mtp\",\"num_speculative_tokens\":${SPEC_TOKENS:-4}}")
   echo "speculative: ${SPEC[*]}"
 fi
@@ -444,7 +435,7 @@ stage loading
 if [[ "${SELF_TEST:-1}" == "1" ]]; then
   (
     if python3 /usr/local/bin/self-test.py \
-         --base "http://127.0.0.1:${API_PORT:-8002}" --model "$SERVED"; then
+         --base "http://127.0.0.1:${API_PORT:-8000}" --model "$SERVED"; then
       stage serving
     else
       stage self-test-failed
@@ -455,7 +446,7 @@ if [[ "${SELF_TEST:-1}" == "1" ]]; then
   ) &
 else
   ( for _ in $(seq 1 480); do
-      curl -sf -o /dev/null --max-time 4 "http://127.0.0.1:${API_PORT:-8002}/v1/models" \
+      curl -sf -o /dev/null --max-time 4 "http://127.0.0.1:${API_PORT:-8000}/v1/models" \
         && { stage serving; break; }
       sleep 5
     done ) &
@@ -465,76 +456,30 @@ fi
 #
 # Parser names do not match the model version, which is normal here: the vendor
 # recipe for 5.3-Flash specifies glm47 and glm45.
-# --- MoE backend and CUDA graphs -------------------------------------------
-# marlin because the native NVFP4 MoE kernels die on sm_121 with
-# cudaErrorNoKernelImageForDevice; marlin dequantises to FP16 instead.
-#
-# Pairing marlin with --enforce-eager is recipe convention, not a correctness
-# constraint. Marlin's workspace helper reuses storage precisely so a captured
-# graph's addresses stay valid, and the only eager gate in this vLLM is for
-# DeepseekV4. Capture measures 6 s here. CUDA_GRAPHS=0 restores eager.
-#
-# Capture sizes are in TOKENS and vLLM rounds them to multiples of (1 + draft
-# tokens). Above max_num_seqs * (1 + k) the dispatcher returns NONE and decode
-# falls back to eager with nothing in the log to say so, which is why the
-# ceiling is computed and checked rather than left to whoever edits the list.
-MOE=()
-if [[ "${MOE_BACKEND:-marlin}" == "marlin" ]]; then
-  if [[ "${CUDA_GRAPHS:-1}" == "1" ]]; then
-    _k=1
-    [[ "$MTP" == "1" ]] && _k=$(( ${SPEC_TOKENS:-4} + 1 ))
-    [[ "$EXTRA_ARGS" == *'"method":"dflash"'* ]] &&
-      _k=$(( $(sed 's/.*"method":"dflash".*"num_speculative_tokens":\([0-9]*\).*/\1/' <<<"$EXTRA_ARGS") + 1 ))
-    _ceil=$(( ${MAX_NUM_SEQS:-8} * _k ))
-    _largest=$(tr ' ' '\n' <<<"$CUDAGRAPH_CAPTURE_SIZES" | sort -n | tail -1)
-    if (( _largest > _ceil )); then
-      echo "WARNING: largest capture size $_largest exceeds max_num_seqs*(1+k)=$_ceil;" >&2
-      echo "decode above $_ceil tokens will run eager and log nothing." >&2
-    fi
-    MOE=(--moe-backend marlin
-         --cudagraph-capture-sizes ${CUDAGRAPH_CAPTURE_SIZES}
-         --compilation-config "{\"cudagraph_mode\":\"${CUDAGRAPH_MODE:-FULL_AND_PIECEWISE}\"}")
-    echo "MoE backend: marlin, cudagraphs ${CUDAGRAPH_MODE:-FULL_AND_PIECEWISE}" \
-         "(sizes: $CUDAGRAPH_CAPTURE_SIZES, ceiling ${_ceil})"
-  else
-    MOE=(--moe-backend marlin --enforce-eager)
-    echo "MoE backend: marlin (enforce-eager, CUDA_GRAPHS=0)"
-  fi
-else
-  MOE=(--moe-backend "${MOE_BACKEND}")
-  echo "MoE backend: ${MOE_BACKEND} (expect cudaErrorNoKernelImageForDevice if native)"
+# --- vLLM argv: match validated 2× Spark launch (launch-glm53-w4a16-tp2-dflash2.sh)
+# Do NOT add upstream-only flags (--load-format, --safetensors-load-strategy,
+# --enable-prefix-caching, --long-prefill-token-threshold, --limit-mm-per-prompt,
+# --skip-mm-profiling) unless the golden recipe also passes them.
+MOE_ARGS=()
+if [[ -n "${MOE_BACKEND:-}" ]]; then
+  MOE_ARGS=(--moe-backend "${MOE_BACKEND}")
+  echo "MoE backend: ${MOE_BACKEND}"
 fi
 
-# Multimodal. --skip-mm-profiling keeps image+video serving without the
-# max-size dummy forward at init, which is slow and can OOM on UMA.
-# The closing brace is escaped: bash ends ${VAR:-...} at the first unescaped
-# one, so it would cut the default short and append the tail as literal text.
-LIMIT_MM="${LIMIT_MM:-{\"image\":4,\"video\":1\}}"
-python3 -c 'import json, sys; json.loads(sys.argv[1])' "$LIMIT_MM" 2>/dev/null || {
-  echo "FATAL: LIMIT_MM is not valid JSON: $LIMIT_MM" >&2
-  echo "       Write the whole object, closing brace included." >&2
-  exit 1; }
-MM=(--limit-mm-per-prompt "$LIMIT_MM")
-[[ "${SKIP_MM_PROFILING:-1}" == "1" ]] && MM+=(--skip-mm-profiling)
+# Production golden: ENFORCE_EAGER=1. CUDA_GRAPHS=0 is accepted as alias.
+EAGER_ARGS=()
+if [[ "${ENFORCE_EAGER:-1}" == "1" || "${CUDA_GRAPHS:-0}" == "0" ]]; then
+  EAGER_ARGS=(--enforce-eager)
+  echo "eager: --enforce-eager"
+fi
 
-# The checkpoint ships a TEXT-ONLY template. Its media branch renders
-# "<reminder>You are unable to process this image ...</reminder>" and emits no
-# placeholder, so vLLM's processor extracts the image features, scans the
-# prompt for <|begin_of_image|><|image|><|end_of_image|> to replace, finds
-# nothing, and every image request dies in _apply_prompt_updates with
-# "Failed to apply prompt replacement for mm_items['image'][0]". The weights
-# are fine: 347 vision tensors and all three token ids are in the checkpoint.
-#
-# chat-template.jinja beside this file is that same template with the media
-# branch emitting what vLLM scans for. A checkpoint that grows its own image
-# handling takes precedence again, so this stops applying by itself.
 TMPL=()
 : "${CHAT_TEMPLATE:=}"
 if [[ -z "$CHAT_TEMPLATE" ]]; then
-  if grep -qF '<|begin_of_image|>' "$MODEL/chat_template.jinja" 2>/dev/null; then
-    CHAT_TEMPLATE="$MODEL/chat_template.jinja"
-  elif [[ -f /usr/local/share/glm53-chat-template.jinja ]]; then
+  if [[ -f /usr/local/share/glm53-chat-template.jinja ]]; then
     CHAT_TEMPLATE=/usr/local/share/glm53-chat-template.jinja
+  elif [[ -f "$MODEL/chat_template_mm.jinja" ]]; then
+    CHAT_TEMPLATE="$MODEL/chat_template_mm.jinja"
   elif [[ -f "$MODEL/chat_template.jinja" ]]; then
     CHAT_TEMPLATE="$MODEL/chat_template.jinja"
   fi
@@ -544,58 +489,48 @@ if [[ -n "$CHAT_TEMPLATE" ]]; then
   echo "chat template: $CHAT_TEMPLATE"
 fi
 
-# A 320B MoE takes far longer to init than the default allows.
 export VLLM_ENGINE_READY_TIMEOUT_S="${VLLM_ENGINE_READY_TIMEOUT_S:-3600}"
+export VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS="${VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS:-3600}"
 
-# --- KV cache pin ----------------------------------------------------------
-# Left unset, vLLM PROFILES the KV cache and takes everything available -- here
-# that was 13.59 GiB, giving 796,361 tokens. FlashInfer's autotune then runs
-# during warmup, asks the driver for more, and there is none:
-#
-#   NVRM: Check failed: Out of memory [NV_ERR_NO_MEMORY] ... _memdescAllocInternal
-#   RayWorkerProc rank=[0] died unexpectedly
-#
-# On a discrete GPU the profiler's headroom assumptions usually survive this.
-# On GB10's unified memory they do not, which is what the upstream recipe means
-# by "--kv-cache-memory pin (UMA OOM only)". Pin it below the profiled figure so
-# warmup has room.
-#
-# Measured 2026-08-27: a 10 GiB pin made things WORSE, because skipping the
-# profile also discards the gpu_memory_utilization margin autotune relies on.
 KV_ARGS=()
 if [[ -n "${KV_CACHE_MEMORY:-}" ]]; then
   KV_ARGS=(--kv-cache-memory "${KV_CACHE_MEMORY}")
   echo "kv-cache-memory pinned to ${KV_CACHE_MEMORY} bytes ($(( KV_CACHE_MEMORY / 1073741824 )) GiB)"
 fi
 
-# lazy, NOT eager. eager stages each shard through anonymous memory and does
-# load faster -- 511 s against 690 s here -- but the buffers are still resident
-# when vLLM profiles for KV, and it measured 6.74 GiB of KV cache against
-# 12.31 GiB on the same boot otherwise: 810,576 tokens against 1,296,922. Three
-# minutes of boot is not worth 38% of the cache on a model this size. qwen38
-# has the headroom to afford it; this does not.
+DIST_ARGS=(--distributed-executor-backend "${DIST_BACKEND:-mp}")
+if [[ "${DIST_BACKEND:-mp}" == "mp" ]]; then
+  DIST_ARGS+=(--nnodes "$NNODES" --node-rank "$RANK" --master-addr "$MASTER_ADDR" --master-port "$MASTER_PORT")
+  if [[ "$ROLE" == "worker" || "$RANK" != "0" ]]; then
+    DIST_ARGS+=(--headless)
+  fi
+fi
+
+SCHED_ARGS=()
+[[ "${ASYNC_SCHEDULING:-0}" == "1" ]] && SCHED_ARGS+=(--async-scheduling)
+AUTOTUNE_ARGS=()
+[[ "${DISABLE_FLASHINFER_AUTOTUNE:-0}" == "1" ]] && AUTOTUNE_ARGS+=(--no-enable-flashinfer-autotune)
+
+# Same flag order/set as golden launch (model source may be Hub id).
 exec vllm serve "$MODEL" \
   --served-model-name "$SERVED" \
-  --tensor-parallel-size "$TP" \
-  --distributed-executor-backend ray \
-  --load-format auto \
-  --safetensors-load-strategy "${SAFETENSORS_LOAD_STRATEGY:-lazy}" \
-  --gpu-memory-utilization "${GPU_MEM_UTIL:-0.88}" \
-  --max-model-len "${MAX_MODEL_LEN}" \
-  --kv-cache-dtype "${KV_CACHE_DTYPE:-fp8_e4m3}" \
-  --block-size "${BLOCK_SIZE:-2304}" \
-  "${KV_ARGS[@]}" \
+  --host 0.0.0.0 --port "${API_PORT:-8000}" \
   --trust-remote-code \
-  --enable-prefix-caching \
-  --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS}" \
+  --tensor-parallel-size "$TP" \
+  --gpu-memory-utilization "${GPU_MEM_UTIL:-0.85}" \
+  --max-model-len "${MAX_MODEL_LEN}" \
   --max-num-seqs "${MAX_NUM_SEQS}" \
-  --long-prefill-token-threshold "${LONG_PREFILL_TOKEN_THRESHOLD}" \
-  "${MOE[@]}" \
-  "${MM[@]}" \
-  "${TMPL[@]}" \
-  ${ITERATION_DETAILS:+--enable-logging-iteration-details} \
-  --enable-auto-tool-choice --tool-call-parser glm47 \
-  --reasoning-parser glm45 \
+  --block-size "${BLOCK_SIZE:-2304}" \
+  --kv-cache-dtype "${KV_CACHE_DTYPE:-fp8_e4m3}" \
+  "${KV_ARGS[@]}" \
+  "${MOE_ARGS[@]}" \
+  "${SCHED_ARGS[@]}" \
+  "${AUTOTUNE_ARGS[@]}" \
+  "${EAGER_ARGS[@]}" \
+  --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS}" \
   "${SPEC[@]}" \
-  --host 0.0.0.0 --port "${API_PORT:-8002}" \
+  --tool-call-parser glm47 --enable-auto-tool-choice \
+  --reasoning-parser glm45 \
+  "${TMPL[@]}" \
+  "${DIST_ARGS[@]}" \
   ${EXTRA_ARGS:-}

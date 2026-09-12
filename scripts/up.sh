@@ -1,85 +1,66 @@
 #!/usr/bin/env bash
-# Bring up 2× DGX Spark GLM-5.3-Flash (mentatd → glm53 on head+worker).
-# Usage: ./scripts/up.sh
-# Requires SSH to HEAD_HOST and WORKER_HOST; repo checked out at REMOTE_ROOT on both.
+# Bring up NEW-repo stack: upstream-based glm53-spark:2x-sm121, mp TP=2.
+# Applies KEEP overlays from the validated 2× Spark recipe (not that launcher).
 set -euo pipefail
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "${ROOT}"
+cd "$ROOT"
+# shellcheck disable=SC1091
+[[ -f .env ]] || cp .env.example .env
+set -a; source .env; set +a
 
-if [[ -f .env ]]; then
-  # shellcheck disable=SC1091
-  set -a && source .env && set +a
-fi
-
-SSH_USER="${SSH_USER:-${USER}}"
-HEAD_HOST="${HEAD_HOST:?Set HEAD_HOST in .env}"
-WORKER_HOST="${WORKER_HOST:?Set WORKER_HOST in .env}"
-REMOTE_ROOT="${REMOTE_ROOT:-${ROOT}}"
+SSH_USER="${SSH_USER:-$USER}"
+HEAD_HOST="${HEAD_HOST:?}"
+WORKER_HOST="${WORKER_HOST:?}"
+REMOTE_ROOT="${REMOTE_ROOT:-$ROOT}"
 IMAGE="${IMAGE:-glm53-spark:2x-sm121}"
-COMPOSE_FILES="${COMPOSE_FILES:--f compose/glm53.yaml -f compose/overrides/production.yaml -f compose/overrides/dflash2.yaml}"
-API_PORT="${API_PORT:-8002}"
+API_PORT="${API_PORT:-8000}"
 
 ssh_n() { ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new "${SSH_USER}@$1" "${@:2}"; }
 
-echo "[up] 1/12 configuration"
-[[ "${TP_SIZE:-${TP:-2}}" == "2" ]] || { echo "FATAL: TP_SIZE must be 2 for this recipe" >&2; exit 1; }
-[[ -n "${MODEL:-}" ]] || { echo "FATAL: MODEL required" >&2; exit 1; }
-echo "  HEAD=${HEAD_HOST} WORKER=${WORKER_HOST} IMAGE=${IMAGE} MODEL=${MODEL}"
+echo "[up] generate hybrid APC from $IMAGE"
+bash "$ROOT/scripts/gen-apc.sh"
+echo "[up] generate DFlash GLM5 KV-group overlay from $IMAGE"
+bash "$ROOT/scripts/gen-kv-groups.sh"
+echo "[up] generate SM90 fp8 plan-dtype overlay from $IMAGE"
+bash "$ROOT/scripts/gen-sm90-fp8.sh"
 
-echo "[up] 2/12 host connectivity"
-for h in "${HEAD_HOST}" "${WORKER_HOST}"; do
-  ssh_n "$h" "echo ok:\$(hostname)" >/dev/null
-done
-
-echo "[up] 3/12 docker check"
-for h in "${HEAD_HOST}" "${WORKER_HOST}"; do
-  ssh_n "$h" "docker info >/dev/null"
-done
-
-echo "[up] 4/12 network/interface check"
-IFACE="${NCCL_SOCKET_IFNAME:-}"
-if [[ -n "$IFACE" ]]; then
-  for h in "${HEAD_HOST}" "${WORKER_HOST}"; do
-    ssh_n "$h" "ip link show dev '${IFACE}' >/dev/null" \
-      || { echo "FATAL: ${IFACE} missing on ${h}" >&2; exit 1; }
-  done
+if [[ "${LOCK_CLOCKS:-1}" == "1" ]]; then
+  echo "[up] lock GB10 clocks to ${CLOCK_MHZ:-2400} MHz"
+  bash "$ROOT/clocks.sh" "${CLOCK_MHZ:-2400}" 2>&1 | tail -n 8 \
+    || echo "[up] WARN: clocks.sh failed — continuing at stock clocks" >&2
 else
-  echo "  NCCL_SOCKET_IFNAME unset — skipping iface existence check"
+  echo "[up] LOCK_CLOCKS=0 — stock auto-boost"
 fi
 
-echo "[up] 5/12 image check"
-for h in "${HEAD_HOST}" "${WORKER_HOST}"; do
-  ssh_n "$h" "docker image inspect '${IMAGE}' >/dev/null" \
-    || { echo "FATAL: image ${IMAGE} missing on ${h}; build/load first" >&2; exit 1; }
-done
+echo "[up] stop old/new containers on both nodes"
+docker rm -f glm53 vllm_glm53_w4a16 mentatd mentatd-serve 2>/dev/null || true
+ssh_n "$WORKER_HOST" 'docker rm -f glm53 vllm_glm53_w4a16 mentatd 2>/dev/null || true'
 
-echo "[up] 6/12 mentatd on both nodes"
-ssh_n "${HEAD_HOST}" "cd '${REMOTE_ROOT}' && docker compose -f compose/mentatd.yaml --env-file .env up -d" &
-ssh_n "${WORKER_HOST}" "cd '${REMOTE_ROOT}' && docker compose -f compose/mentatd.yaml --env-file .env up -d" &
-wait
-
-echo "[up] 7/12 mentatd-serve on head (optional front door :6381)"
-ssh_n "${HEAD_HOST}" "cd '${REMOTE_ROOT}' && docker compose -f compose/mentatd-serve.yaml --env-file .env up -d" || true
-
-echo "[up] 8–9/12 distributed vLLM (worker + head)"
-# Worker first is fine under mentat (retries); still start worker then head for status clarity.
-ssh_n "${WORKER_HOST}" "cd '${REMOTE_ROOT}' && ROLE=worker NODE_RANK=1 MENTAT_NODE_IP=${WORKER_HOST} MENTAT_PEERS=${HEAD_HOST}:6379 docker compose ${COMPOSE_FILES} --env-file .env up -d" &
-ssh_n "${HEAD_HOST}" "cd '${REMOTE_ROOT}' && ROLE=head NODE_RANK=0 MENTAT_NODE_IP=${HEAD_HOST} MENTAT_PEERS=${WORKER_HOST}:6379 docker compose ${COMPOSE_FILES} --env-file .env up -d" &
-wait
-
-echo "[up] 10–11/12 wait for /health and /v1/models on head:${API_PORT}"
-ok=0
-for _ in $(seq 1 120); do
-  code="$(curl -s -o /dev/null -w '%{http_code}' -m 5 "http://${HEAD_HOST}:${API_PORT}/v1/models" || true)"
-  if [[ "$code" == "200" ]]; then ok=1; break; fi
-  sleep 15
-done
-[[ "$ok" == "1" ]] || { echo "FATAL: timed out waiting for :${API_PORT}/v1/models" >&2; exit 1; }
-echo "  /v1/models OK"
-
-echo "[up] 12/12 inference self-test"
-if [[ -x "${ROOT}/scripts/self-test.sh" ]]; then
-  HEAD_HOST="${HEAD_HOST}" API_PORT="${API_PORT}" "${ROOT}/scripts/self-test.sh" || true
+echo "[up] ensure image on worker"
+if ! ssh_n "$WORKER_HOST" "docker image inspect '$IMAGE' >/dev/null 2>&1"; then
+  echo "[up] transferring $IMAGE (large)..."
+  docker save "$IMAGE" | ssh_n "$WORKER_HOST" 'docker load'
 fi
-echo "[up] done"
+
+echo "[up] sync repo (compose/patches/runtime/env) to worker"
+rsync -az --delete --exclude '.git' --exclude 'reference-notes' --exclude '__pycache__' \
+  "$ROOT/" "${SSH_USER}@${WORKER_HOST}:${REMOTE_ROOT}/"
+
+echo "[up] worker (rank 1)"
+ssh_n "$WORKER_HOST" "cd '$REMOTE_ROOT' && docker compose -f compose/glm53.yaml --profile worker --env-file .env up -d --force-recreate"
+sleep 20
+echo "[up] head (rank 0)"
+docker compose -f compose/glm53.yaml --profile head --env-file .env up -d --force-recreate
+
+echo "[up] wait for http://${HEAD_HOST}:${API_PORT}/health"
+for i in $(seq 1 180); do
+  if curl -sf -m 5 "http://${HEAD_HOST}:${API_PORT}/health" >/dev/null; then
+    echo "[up] READY"
+    curl -sf "http://${HEAD_HOST}:${API_PORT}/v1/models" | head -c 400; echo
+    exit 0
+  fi
+  docker ps --format '{{.Names}}' | grep -qx glm53 || { echo 'head died'; docker logs --tail 120 glm53; exit 1; }
+  echo "  ... ${i}0s"
+  sleep 10
+done
+echo "[up] TIMEOUT"; docker logs --tail 100 glm53; exit 1
