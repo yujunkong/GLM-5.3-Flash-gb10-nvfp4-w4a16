@@ -49,7 +49,7 @@ Concurrent C6 (~80+ tok/s)는 이미 도달. **싱글스트림 디코드 + 승�
 | Overlay | Role |
 |---------|------|
 | `patches/glm5next_model.py` | W4A16 dense MLP BF16 + SupportsEagle3 |
-| `patches/sparse_attn_indexer_kpool.py` | kpool indexer |
+| `patches/sparse_attn_indexer_kpool.py` | kpool indexer + workspace reuse for pool_topk buffers |
 | `patches/qwen3_dflash2.py` | DFlash2 model |
 | `patches/dflash2_speculator.py` | edge walk + **optional** ACC probe |
 | `patches/*warmup*.py` | DFlash / mHC warmups (API aligned) |
