@@ -34,8 +34,9 @@ x-glm53-common: &glm53-common
     # Multimodal chat template from this repo
     - ${CHAT_TEMPLATE_HOST:-../chat_template_mm.jinja}:/usr/local/share/glm53-chat-template.jinja:ro
     # KEEP overlays from validated 2× Spark recipe (GLM53_SM121_MLA=0 path).
-    # glm5next: W4A16 dense MLP BF16 + SupportsEagle3 for DFlash2.
-    - ../patches/glm5next_model.py:/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py:ro
+    # glm5next: Golden W4A16 overlay OR image-stock (ModelOpt lane). Toggle via
+    # SERVE_LANE / GLM5NEXT_PATCH_HOST (see scripts/apply-serve-lane.sh).
+    - ${GLM5NEXT_PATCH_HOST:-../patches/glm5next_model.py}:/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py:ro
     - ../patches/sparse_attn_indexer_kpool.py:/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/sparse_attn_indexer_kpool.py:ro
     - ../patches/qwen3_dflash2.py:/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/qwen3_dflash2.py:ro
     - ../patches/dflash2_speculator.py:/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/spec_decode/dflash2/speculator.py:ro

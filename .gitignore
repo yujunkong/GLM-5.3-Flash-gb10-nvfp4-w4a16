@@ -1,6 +1,7 @@
 # Local secrets / overrides — never commit
 .env
 .env.local
+.env.lane
 *.env.local
 
 # Hugging Face / model caches (must not live in-repo)

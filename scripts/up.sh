@@ -7,6 +7,8 @@ cd "$ROOT"
 # shellcheck disable=SC1091
 [[ -f .env ]] || cp .env.example .env
 set -a; source .env; set +a
+# shellcheck disable=SC1091
+source "$ROOT/scripts/apply-serve-lane.sh"
 
 SSH_USER="${SSH_USER:-$USER}"
 HEAD_HOST="${HEAD_HOST:?}"
@@ -47,10 +49,10 @@ rsync -az --delete --exclude '.git' --exclude 'reference-notes' --exclude '__pyc
   "$ROOT/" "${SSH_USER}@${WORKER_HOST}:${REMOTE_ROOT}/"
 
 echo "[up] worker (rank 1)"
-ssh_n "$WORKER_HOST" "cd '$REMOTE_ROOT' && docker compose -f compose/glm53.yaml --profile worker --env-file .env up -d --force-recreate"
+ssh_n "$WORKER_HOST" "cd '$REMOTE_ROOT' && docker compose -f compose/glm53.yaml --profile worker --env-file .env --env-file .env.lane up -d --force-recreate"
 sleep 20
 echo "[up] head (rank 0)"
-docker compose -f compose/glm53.yaml --profile head --env-file .env up -d --force-recreate
+docker compose -f compose/glm53.yaml --profile head --env-file .env --env-file .env.lane up -d --force-recreate
 
 echo "[up] wait for http://${HEAD_HOST}:${API_PORT}/health"
 for i in $(seq 1 180); do
