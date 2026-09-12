@@ -1,5 +1,7 @@
 # Benchmark
 
+Canonical knobs: [`golden-configuration.md`](golden-configuration.md) · Narrative: [`performance.md`](performance.md).
+
 ## Goals (target)
 
 | Metric | Target | Gate |
@@ -8,10 +10,18 @@
 | Spec accept (`/metrics` accepted÷drafted) | **50–70%** | soak cumulative, PROBE=0 |
 | Concurrent C6 aggregate | stretch — hold ≥~80 tok/s if possible | not the primary gate |
 
-## Current (measured 2026-09-11, 2× Spark, Golden)
+## Current Golden band (measured, 2× Spark)
 
-Stack: `glm53-spark:2x-sm121`, `canada-quant/glm-5.3-w4a16-mtp` + `incoai/GLM-5.3-Flash-DFlash2`,  
-`TOP_K=32` / `WALK=edge` / `TOKENS=7` / `DFLASH2_ACC_PROBE=0` / clocks **2400 MHz**.
+Stack: `glm53-spark:2x-sm121`, W4A16 + DFlash2, TOP_K=32 / WALK=edge / K=7 / PROBE=0 / clocks **2400**.
+
+| Metric | Production Golden band | Example suite |
+|--------|------------------------|---------------|
+| Soak decode | **~34.7–35.5 tok/s** | baseline med **35.87** / mean **34.54**; checklist-final **35.09** |
+| Accept | **~0.43–0.44** | **0.430–0.448** across suites |
+| Longrun 60m | med **33.50**, accept **0.400** | continuous load floor |
+| C6 | **~81–87** | concurrent OK |
+
+## Current (suite table excerpt)
 
 | Metric | Baseline `upstream-baseline-clocks2400` | Post-debug `golden-post-acc-debug` | vs goal |
 |--------|----------------------------------------|--------------------------------------|---------|
@@ -57,5 +67,9 @@ Stack: `glm53-spark:2x-sm121`, `canada-quant/glm-5.3-w4a16-mtp` + `incoai/GLM-5.
 | 2026-09-12 | control-pre54282 | **36.10** | **0.419** | — | — | — | pre-#54282 restore OK |
 | 2026-09-12 | clocks A stock 10m | 34.21 | 0.418 | — | — | — | evidence/clocks |
 | 2026-09-12 | clocks B 2400 10m | 34.33 | 0.417 | — | — | — | KEEP lock (stability) |
-| 2026-09-12 | spinwait 0.002 20m | 33.77 | 0.415 | — | — | — | REVERT |
+| 2026-09-12 | spinwait 0.002 20m | 33.77 | 0.415 | — | — | — | **REVERT** |
 | 2026-09-12 | checklist-final-spinwait-2400 | **35.09** | **0.421** | 38.1 | 47.2 | **87.2** | then spinwait reverted |
+| 2026-09-12 | longrun-60m | **33.50** | 0.400 | — | — | — | evidence/longrun |
+| 2026-09-12 | logits-64 | −2.77% vs 512 | +0.005 | — | — | — | **REVERT** |
+| 2026-09-12 | expandable-OFF | −3.99% | −0.014 | — | — | — | **REVERT** (keep ON) |
+| 2026-09-12 | sparse-reuse | +0.70% | flat | — | — | — | **KEEP** |

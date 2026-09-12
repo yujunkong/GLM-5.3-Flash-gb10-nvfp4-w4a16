@@ -1,13 +1,19 @@
-# DFlash2 speculative decoding override (2× Spark).
-# Hub draft model — no revision pin. HF cache comes from glm53.yaml HOST_CACHE mount.
+# Optional DFlash2 env overlay (EXPERIMENT ONLY).
+# NOT used by scripts/up.sh — knobs already in compose/glm53.yaml + .env.
+# Service names must match compose/glm53.yaml (glm53-head / glm53-worker).
 
 services:
-  glm53:
+  glm53-head:
     environment:
-      - DRAFT_MODEL=${DRAFT_MODEL:-incoai/GLM-5.3-Flash-DFlash2}
-      - DFLASH_TOKENS=${DFLASH_TOKENS:-7}
-      - DFLASH_SELECTOR_TOP_K=${DFLASH_SELECTOR_TOP_K:-32}
-      - DFLASH_WALK_MODE=${DFLASH_WALK_MODE:-edge}
-      - DFLASH2_ACC_PROBE=${DFLASH2_ACC_PROBE:-0}
-      # If DRAFT_MODEL changes, update the model field below to match (compose does not nest expand).
-      - 'EXTRA_ARGS=--speculative-config {"method":"dflash","model":"incoai/GLM-5.3-Flash-DFlash2","num_speculative_tokens":7}'
+      DRAFT_MODEL: ${DRAFT_MODEL:-incoai/GLM-5.3-Flash-DFlash2}
+      DFLASH_TOKENS: ${DFLASH_TOKENS:-7}
+      DFLASH_SELECTOR_TOP_K: ${DFLASH_SELECTOR_TOP_K:-32}
+      DFLASH_WALK_MODE: ${DFLASH_WALK_MODE:-edge}
+      DFLASH2_ACC_PROBE: ${DFLASH2_ACC_PROBE:-0}
+  glm53-worker:
+    environment:
+      DRAFT_MODEL: ${DRAFT_MODEL:-incoai/GLM-5.3-Flash-DFlash2}
+      DFLASH_TOKENS: ${DFLASH_TOKENS:-7}
+      DFLASH_SELECTOR_TOP_K: ${DFLASH_SELECTOR_TOP_K:-32}
+      DFLASH_WALK_MODE: ${DFLASH_WALK_MODE:-edge}
+      DFLASH2_ACC_PROBE: ${DFLASH2_ACC_PROBE:-0}

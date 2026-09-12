@@ -1,7 +1,8 @@
-# 2× DGX Spark TP=2 — upstream-based image (glm53-spark:2x-sm121)
+# 2× DGX Spark TP=2 — Golden production compose (v1.0.0-golden)
+# Canonical knobs: docs/golden-configuration.md
 # Distributed: mp (not mentat/ray). Model: Hub id via MODEL (no revision pin).
-# Runtime overlays under ../patches are model-specific (W4A16/DFlash), adapted
-# from the validated local 2× Spark bring-up — not a copy of that recipe's launcher.
+# Runtime overlays under ../patches are W4A16/DFlash KEEP overlays.
+# scripts/up.sh uses this file only (not compose/overrides/* by default).
 
 name: glm53-flash-2x-spark
 

@@ -1,5 +1,7 @@
 # GLM-5.3-Flash — 2× DGX Spark (GB10 / SM121)
 
+**Version:** [`v1.0.0-golden`](VERSION) · Canonical config: [`docs/golden-configuration.md`](docs/golden-configuration.md)
+
 NVIDIA DGX Spark 2대 전용 GLM-5.3-Flash serving recipe (vLLM, TP=2).
 
 This repository is specifically designed for **2× NVIDIA DGX Spark / GB10 / SM121**.  
@@ -12,6 +14,10 @@ It is **not** a mechanically reduced 4-node recipe. The distributed topology, me
 | Nodes | 2 (1 GPU per node) |
 | Tensor Parallel | TP=2 |
 | Inference engine | vLLM |
+| Image | `glm53-spark:2x-sm121` |
+| vLLM / Torch / CUDA | `0.28.1rc1.dev580+g385dce36b` / `2.13.0+cu130` / `13.0` |
+| FlashInfer | `flashinfer-python 0.6.18.dev20260819` |
+| Target / Draft | W4A16 `canada-quant/glm-5.3-w4a16-mtp` + DFlash2 `incoai/GLM-5.3-Flash-DFlash2` |
 | Upstream reference | [mmastrac/glm-5.3-flash-4x-gx10](https://github.com/mmastrac/glm-5.3-flash-4x-gx10) |
 
 Upstream은 4× ASUS GX10 / GB10, TP=4, 4-node topology 대상이다. 본 repo는 4대→2대 축소가 아니라, 처음부터 2× DGX Spark / GB10 / SM121 / TP=2 전용으로 재구성한다.
@@ -20,24 +26,40 @@ Upstream은 4× ASUS GX10 / GB10, TP=4, 4-node topology 대상이다. 본 repo�
 
 ## 1. Project overview
 
-- **목표**: `./scripts/up.sh` 한 번으로 2× DGX Spark에서 GLM-5.3-Flash serving을 기동
-- **성능 목표 (게이트)**: 싱글스트림 **decode 40–50 tok/s**, DFlash **승인율 50–70%** (`/metrics` accepted÷drafted)
-- **엔진**: vLLM만 사용 (SGLang / Ray serving / 별도 custom inference server 미사용)
-- **기준 upstream**: `mmastrac/glm-5.3-flash-4x-gx10`의 GB10/SM121 해결 방법을 참고하되, 4-node 전용 요소는 제거
-- **모델 경로**: Hugging Face Hub → `~/.cache/huggingface` → container `/root/.cache/huggingface` → vLLM
+- **목표 게이트 (aspirational):** 싱글스트림 decode **40–50 tok/s**, DFlash accept **50–70%**
+- **현재 Golden (검증·운영):** soak **~34.7–35.5 tok/s**, accept **~0.43–0.44** — **장시간 안정성 우선** 최종 구성 (`v1.0.0-golden`)
+- **엔진:** vLLM만 사용 (SGLang / Ray serving / 별도 custom inference server 미사용)
+- **모델 경로:** Hugging Face Hub → `~/.cache/huggingface` → container `/root/.cache/huggingface` → vLLM (**`/var/tmp` 미사용**)
 
-### 현재 vs 목표 (2026-09-12 실측, W4A16 Golden)
+### Golden Configuration (요약)
 
-| | 목표 | 현재 (Golden) | 상태 |
+| Knob | Production value |
+|------|------------------|
+| Clocks | `LOCK_CLOCKS=1` / **2400 MHz** |
+| Async | `ASYNC_SCHEDULING=1` |
+| MoE | `MOE_BACKEND=marlin` |
+| Eager | `ENFORCE_EAGER=1`, `CUDA_GRAPHS=0` |
+| DFlash2 | `DFLASH_TOKENS=7`, `TOP_K=32`, `WALK=edge`, `PROBE=0` |
+| KV | `fp8_e4m3` |
+| Allocator | `expandable_segments:True` |
+| Logits budget | `VLLM_SPARSE_INDEXER_MAX_LOGITS_MB=512` |
+| Spin-wait | **pristine** (`busy_loop_s=1.0`) |
+| MLA / gate | `GLM53_SM121_MLA=0`, `APPLY_GATE_LINEAR=0` |
+
+상세 KEEP / REJECTED: [`docs/golden-configuration.md`](docs/golden-configuration.md) · 성능 실험: [`docs/performance.md`](docs/performance.md)
+
+### 현재 vs 목표 (실측)
+
+| | 목표 | Golden (운영) | 상태 |
 |--|------|---------------|------|
-| Decode (soak) | 40–50 tok/s | **~33–36 tok/s** (60m med **33.5**) | 미달 — **코드 패치 천장** |
-| Accept (`/metrics`) | 50–70% | **~0.40–0.45** | 미달 — draft mismatch (B2) |
-| C6 concurrent | stretch | **~81–82 tok/s** | concurrent는 양호 |
+| Decode (soak) | 40–50 tok/s | **~34.7–35.5** (longrun60m med **33.5**) | 미달 — 코드/런타임 패치 천장 |
+| Accept (`/metrics`) | 50–70% | **~0.43–0.44** | 미달 — draft mismatch (B2) |
+| C6 concurrent | stretch | **~81–87 tok/s** | concurrent 양호 |
 
-checklist2 A/B(sparse reuse KEEP +0.7%; logits64 / expandable-OFF REVERT) 후에도 게이트 미달.  
-이 이상은 **NVFP4 lane** 또는 **W4A16-aligned draft** 없이는 의미 있는 상승이 나오지 않는다.
+악화 확인된 패치(spin-wait 0.002, logits 64, expandable OFF 등)는 **적용하지 않음**.  
+다음 헤드룸: **NVFP4 lane** 또는 **W4A16-aligned draft**.
 
-원인·적용 목록: [`docs/applied-stack.md`](docs/applied-stack.md) · 수치: [`docs/benchmark.md`](docs/benchmark.md) / [`benchmarks/RESULTS.md`](benchmarks/RESULTS.md) · 2026-09-12: [`evidence/final/optimization-report-20260912.md`](evidence/final/optimization-report-20260912.md)
+수치: [`docs/benchmark.md`](docs/benchmark.md) / [`benchmarks/RESULTS.md`](benchmarks/RESULTS.md) / [`evidence/final/optimization-report-20260912.md`](evidence/final/optimization-report-20260912.md)
 
 ### 핵심 설계 원칙
 
@@ -233,11 +255,11 @@ README에 모델 revision hash를 기록하지 않는다.
 | `DFLASH_WALK_MODE` | `edge` |
 | `DFLASH2_ACC_PROBE` | `0` |
 
-DFlash2 관련 설정은 `compose/overrides/dflash2.yaml`에 분리한다.
+DFlash2 기본값은 `compose/glm53.yaml` + `.env`에 있다. `compose/overrides/dflash2.yaml`은 실험용이며 `scripts/up.sh`는 사용하지 않는다.
 
 ### Production baseline (재 A/B 테스트하지 않음)
 
-이미 검증된 기본 production profile:
+이미 검증된 기본 production profile (`v1.0.0-golden`):
 
 ```text
 DFLASH_SELECTOR_TOP_K=32
@@ -246,24 +268,33 @@ DFLASH2_ACC_PROBE=0
 DFLASH_TOKENS=7
 
 MOE_BACKEND=marlin
-
 ENFORCE_EAGER=1
+CUDA_GRAPHS=0
 DISABLE_FLASHINFER_AUTOTUNE=1
 ASYNC_SCHEDULING=1
 APPLY_APC_PATCH=1
+GLM53_SM121_MLA=0
+APPLY_GATE_LINEAR=0
+
+LOCK_CLOCKS=1 / CLOCK_MHZ=2400
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+VLLM_SPARSE_INDEXER_MAX_LOGITS_MB=512
+SPINWAIT_PATCH_HOST=../runtime/spinwait/shm_broadcast.pristine.py
+KV_CACHE_DTYPE=fp8_e4m3
 ```
+
+See [`docs/golden-configuration.md`](docs/golden-configuration.md).
 
 ### Context / batching / KV
 
 | Variable | Default | Notes |
 |----------|---------|--------|
-| `MAX_MODEL_LEN` | `1048576` | bring-up 시 `262144` → `524288` → `1048576` 순 검증 권장. 1M이 불안정하면 README에 실제 검증된 최대값 기록 |
-| `MAX_NUM_SEQS` | `6` | 이후 concurrency benchmark 가능하도록 |
-| `MAX_NUM_BATCHED_TOKENS` | `8192` | 4-node upstream `16384`를 무조건 가져오지 않음. 2× unified memory 안정성 우선 |
-| `KV_CACHE_MEMORY` | (환경변수) | 4-node upstream 값 복사 금지. 2× DGX Spark unified memory 기준으로 재설정 |
-| `GPU_MEM_UTIL` | `0.88` (예) | 무조건 최대 메모리 할당하지 않음 |
-
----
+| `MAX_MODEL_LEN` | `1048576` | bring-up 시 `262144` → `524288` → `1048576` 순 검증 권장 |
+| `MAX_NUM_SEQS` | `6` | concurrency benchmark용 |
+| `MAX_NUM_BATCHED_TOKENS` | `8192` | 2× unified memory 안정성 우선 (4-node `16384` 복사 금지) |
+| `KV_CACHE_MEMORY` | `9663676416` | 2× Spark 기준 pin |
+| `GPU_MEM_UTIL` | `0.85` | Golden (`.env.example`) |
+| `KV_CACHE_DTYPE` | `fp8_e4m3` | Golden |
 
 ## 5. Hugging Face cache
 
@@ -484,26 +515,25 @@ HEAD, WORKER, GPU/rank, TP, NNODES, MODEL, DRAFT MODEL, vLLM version, CUDA versi
 
 | Label | Soak med tok/s | Accept | C1 | C2 | C6 | Notes |
 |-------|----------------|--------|----|----|-----|-------|
-| `upstream-baseline-clocks2400` | **35.87** | **0.430** | 33.5 | 43.9 | 81.0 | 초기 Golden |
-| `golden-post-acc-debug` | 32.55* | **0.448** | 44.7 | 46.0 | **82.1** | *3-run 노이즈 |
-| `20260912-baseline` (Phase0, 3-run) | **33.58** | ~0.416 | — | — | — | tag `glm53-w4a16-baseline-20260912` |
-| `20260912-longrun-60m` | **33.50** | **0.400** | — | — | — | 225 runs; clock 안정, mem↑ 없음 |
-| `20260912-sparse-reuse` KEEP | **33.54** (+0.70% vs ctrl) | **0.412** | — | — | — | kpool workspace reuse |
-| `20260912-keep-confirm` (3m) | **33.63** | **0.422** | — | — | — | land 후 확인 |
+| `upstream-baseline-clocks2400` | **35.87** | **0.430** | 33.5 | 43.9 | 81.0 | Golden band 상단 |
+| `checklist-final-spinwait-2400` | **35.09** | 0.421 | 38.1 | 47.2 | **87.2** | 이후 spinwait REVERT |
+| `golden-post-acc-debug` | 32.55* | **0.448** | 44.7 | 46.0 | 82.1 | *3-run 노이즈 |
+| `20260912-longrun-60m` | **33.50** | 0.400 | — | — | — | 연속 부하 floor |
+| `20260912-sparse-reuse` KEEP | +0.70% vs ctrl | flat | — | — | — | workspace reuse |
 
-**목표 40–50 / 0.50–0.70 미달.** W4A16 + 현 DFlash2에서 checklist2 코드/allocator A/B는 소진됨.
+**운영 Golden 밴드:** soak **~34.7–35.5 tok/s**, accept **~0.43–0.44**.  
+**목표 40–50 / 0.50–0.70 미달** — 무리한 runtime patch로 60 tok/s를 치지 않는다.
 
-| 2026-09-12 A/B | Δ TPS | Accept | Verdict |
-|----------------|-------|--------|---------|
-| sparse buffer reuse | **+0.70%** | 유지 | **KEEP** (`main`) |
-| logits 64 MiB | −2.77% | +0.005 | REVERT |
-| expandable_segments OFF | −3.99% | −0.014 | REVERT (ON 유지) |
-| top-k fallback rewrite | — | — | PATCH=NONE |
+| Rejected (이 스택) | Δ TPS | Verdict |
+|--------------------|-------|---------|
+| spin-wait 0.002 | −1.63% (+ drift worse) | OFF / pristine |
+| logits 64 MiB | −2.77% | OFF / 512 |
+| expandable OFF | −3.99% | keep ON |
+| top-k rewrite | — | PATCH=NONE (이미 있음) |
 
-Accept 진단 (`PROBE=1`): first-reject **A 12.9% / B 87.1% / C 0%**, B 중 **B2 ≈ 90%**  
-→ 서빙 노브로 승인율 0.50+ 불가. draft–target 정렬 또는 NVFP4 lane 필요.
+Accept 진단 (`PROBE=1`): A **12.9%** / B **87.1%** / C **0%**, B 중 B2 **~90%** → 노브로 0.50+ 불가.
 
-- 원본: `benchmarks/<label>/`, `evidence/*-20260912/`, 요약 [`benchmarks/RESULTS.md`](benchmarks/RESULTS.md), [`docs/benchmark.md`](docs/benchmark.md)
+- 원본: `benchmarks/`, `evidence/*-20260912/`, [`docs/performance.md`](docs/performance.md), [`benchmarks/RESULTS.md`](benchmarks/RESULTS.md)
 - 재실행: `bash bench/bench_config.sh <label>` / `bench/soak_timed.py`
 - **미측정 숫자는 기재하지 않는다**
 
@@ -531,15 +561,15 @@ Accept 진단 (`PROBE=1`): first-reject **A 12.9% / B 87.1% / C 0%**, B 중 **B2
 ## 15. Known limitations & current blockers
 
 - 본 recipe는 **2× DGX Spark / TP=2 전용**. 4-node / TP=4는 지원하지 않는다.
-- **성능 게이트 미달 — W4A16 코드 패치 사이클 종료 (2026-09-12)**
-  1. **승인율 ~0.40–0.45** — W4A16 target + `incoai` DFlash2 정합 한계. reject **B2 지배**. `TOP_K`/`WALK`로 50–70% 불가.
-  2. **Soak decode ~33–36 tok/s** — 목표 40–50 미달. accept 천장과 연동; allocator/sparse 추가 A/B는 **+0.7% 수준 또는 악화**.
-  3. Upstream NVFP4 문서의 높은 accept는 **이 스택에 그대로 적용되지 않음**.
-  4. **다음 헤드룸**: NVFP4 production lane 또는 W4A16-aligned draft (코드 패치 범위 밖).
+- **`v1.0.0-golden` — 성능 게이트 미달, 안정 구성 확정 (2026-09-12)**
+  1. Accept **~0.43–0.44** — B2 지배. TOP_K/WALK로 50–70% 불가.
+  2. Soak **~34.7–35.5** (longrun floor ~33.5) — 목표 40–50 미달.
+  3. Rejected: spin-wait 0.002, logits 64, expandable OFF, FlashInfer SM121 rebuild chase, CUBLAS workspace tuning 등 — 상세 [`docs/performance.md`](docs/performance.md).
+  4. 다음 헤드룸: **NVFP4 lane** 또는 **W4A16-aligned draft**.
 - `DFLASH2_ACC_PROBE=1`은 분석 전용 (~−10% soak). 운영 기본은 `0`.
 - `MAX_MODEL_LEN=1048576`은 설정값; 초장문 실측은 별도.
 - SM121 native cubin 부재만으로 full CUDA/FlashInfer rebuild나 custom `.so` 교체를 하지 않는다.
-- 적용 목록: [`docs/applied-stack.md`](docs/applied-stack.md) · 최적화 보고서: [`evidence/final/optimization-report-20260912.md`](evidence/final/optimization-report-20260912.md).
+- Canonical: [`docs/golden-configuration.md`](docs/golden-configuration.md) · [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 
