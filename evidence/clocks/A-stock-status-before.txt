@@ -1,0 +1,6 @@
+[clocks/status] head:
+clocks.current.graphics [MHz], clocks.max.graphics [MHz], temperature.gpu, power.draw [W]
+2411 MHz, 3003 MHz, 42, 9.12 W
+[clocks/status] worker (192.168.100.20):
+clocks.current.graphics [MHz], clocks.max.graphics [MHz], temperature.gpu, power.draw [W]
+2411 MHz, 3003 MHz, 47, 11.18 W

@@ -1,0 +1,6 @@
+TORCH_MEM_FRACTION=
+    PID   RSS CMD
+     22 10452 python3 /usr/local/bin/status-server.py
+    167  4964 /usr/bin/python3 -c from multiprocessing.resource_tracker import main;main(69)
+memory.used [MiB], memory.total [MiB], temperature.gpu
+[N/A], [N/A], 43

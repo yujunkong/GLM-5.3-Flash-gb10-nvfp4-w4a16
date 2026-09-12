@@ -106,4 +106,5 @@ Concurrent C6 (~80+ tok/s)는 이미 도달. **싱글스트림 디코드 + 승�
 - `docs/w4a16-vs-nvfp4.md` — code comparison  
 - `docs/final-improvement-report.md` — this cycle’s completion report  
 - `benchmarks/RESULTS.md` — latest suite table  
+- `benchmarks/pr54282-RESULTS.md` — #54282 A/B (**DISCARD** on overlay)  
 - `README.md` §13–15 — user-facing summary  

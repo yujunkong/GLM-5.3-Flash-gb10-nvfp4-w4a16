@@ -52,3 +52,10 @@ Stack: `glm53-spark:2x-sm121`, `canada-quant/glm-5.3-w4a16-mtp` + `incoai/GLM-5.
 | 2026-09-11 | upstream-baseline-clocks2400 | 35.87 | 0.430 | 33.5 | 43.9 | 81.0 | first Golden baseline |
 | 2026-09-11 | golden-post-acc-debug | 32.55 | 0.448 | 44.7 | 46.0 | 82.1 | after debug feature; PROBE=0 |
 | 2026-09-11 | accept-ceiling-diag | — | reject mean 0.455 | — | — | — | PROBE=1 A/B/C |
+| 2026-09-12 | pr54282-is-drafting | **17.16** | **0.364** | 27.7 | 36.5 | 57.7 | #54282 stock import — **DISCARD** |
+| 2026-09-12 | pr54282-local-gumbel | **23.44** | **0.374** | 22.2 | 39.2 | 56.0 | #54282 local salt — **DISCARD** |
+| 2026-09-12 | control-pre54282 | **36.10** | **0.419** | — | — | — | pre-#54282 restore OK |
+| 2026-09-12 | clocks A stock 10m | 34.21 | 0.418 | — | — | — | evidence/clocks |
+| 2026-09-12 | clocks B 2400 10m | 34.33 | 0.417 | — | — | — | KEEP lock (stability) |
+| 2026-09-12 | spinwait 0.002 20m | 33.77 | 0.415 | — | — | — | REVERT |
+| 2026-09-12 | checklist-final-spinwait-2400 | **35.09** | **0.421** | 38.1 | 47.2 | **87.2** | then spinwait reverted |

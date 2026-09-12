@@ -12,14 +12,14 @@ from vllm.config import VllmConfig
 from vllm.config.compilation import CUDAGraphMode
 from vllm.logger import init_logger
 from vllm.triton_utils import tl, tldevice, triton
-# Local gumbel_noised_argmax mirrors image gumbel.py (#54282 IS_DRAFTING salt).
+# Local gumbel_noised_argmax (pre-#54282 walk wiring).
+# Image gumbel.py has #54282; overlaying IS_DRAFTING into this walk was
+# MEASURED_DISCARD (soak/accept collapse). See benchmarks/pr54282-RESULTS.md.
 from vllm.v1.worker.gpu.sample.gumbel import tl_rand32, tl_rand64
 from vllm.v1.worker.gpu.spec_decode.dflash.speculator import DFlashSpeculator
 
 logger = init_logger(__name__)
 
-# Same salt as vllm/.../sample/gumbel.py (#54282).
-_DRAFT_NOISE_SALT = tl.constexpr(1 << 30)
 
 # Analysis only when DFLASH2_ACC_PROBE=1; Golden path unchanged at 0.
 # Observation only. Does not change scores, walk, or rejection.
@@ -147,22 +147,16 @@ def gumbel_noised_argmax(
     seed,
     pos,
     temp,
-    IS_DRAFTING: tl.constexpr,
     USE_FP64: tl.constexpr,
     APPLY_TEMPERATURE: tl.constexpr = True,
 ):
-    """Argmax under Gumbel-max, or plain argmax at temp 0.
-
-    Mirrors vllm/.../sample/gumbel.py including #54282 draft noise salt.
-    """
+    """Argmax under Gumbel-max, or plain argmax at temp 0. (pre-#54282 control)"""
     if temp != 0.0 and APPLY_TEMPERATURE:
         logits = logits / temp
 
     if USE_FP64:
         logits = logits.to(tl.float64)
     if temp != 0.0:
-        if IS_DRAFTING:
-            pos = pos + _DRAFT_NOISE_SALT
         gumbel_seed = tl.randint(seed, pos)
         if USE_FP64:
             u = tl_rand64(gumbel_seed, keys, includes_zero=False)
@@ -214,16 +208,15 @@ def _selector_walk_kernel(
             other=0,
         )
 
-        # Upstream #54282: sample_pos = P-1; IS_DRAFTING salts draft noise.
-        sample_pos = tl.load(sample_pos_ptr + flat) - 1
+        # pre-#54282 control (no IS_DRAFTING)
+        position = tl.load(sample_pos_ptr + flat) - 1
         _, index = gumbel_noised_argmax(
             scores,
             candidates,
             mask & valid,
             seed,
-            sample_pos,
+            position,
             temperature if SAMPLE_PROBABILISTIC else 0.0,
-            IS_DRAFTING=True,
             USE_FP64=USE_FP64,
         )
 
