@@ -17,7 +17,7 @@ It is **not** a mechanically reduced 4-node recipe. The distributed topology, me
 | Image | `glm53-spark:2x-sm121` |
 | vLLM / Torch / CUDA | `0.28.1rc1.dev580+g385dce36b` / `2.13.0+cu130` / `13.0` |
 | FlashInfer | `flashinfer-python 0.6.18.dev20260819` |
-| Target / Draft | W4A16 `canada-quant/glm-5.3-w4a16-mtp` + DFlash2 `incoai/GLM-5.3-Flash-DFlash2` |
+| Target / Draft | Golden: W4A16 `canada-quant/glm-5.3-w4a16-mtp` + DFlash2 `incoai/GLM-5.3-Flash-DFlash2` · Optional: `SERVE_LANE=modelopt` → `axiomofmind/GLM-5.3-Flash-W4A16-NVFP4` |
 | Upstream reference | [mmastrac/glm-5.3-flash-4x-gx10](https://github.com/mmastrac/glm-5.3-flash-4x-gx10) |
 
 Upstream은 4× ASUS GX10 / GB10, TP=4, 4-node topology 대상이다. 본 repo는 4대→2대 축소가 아니라, 처음부터 2× DGX Spark / GB10 / SM121 / TP=2 전용으로 재구성한다.
@@ -57,9 +57,18 @@ Upstream은 4× ASUS GX10 / GB10, TP=4, 4-node topology 대상이다. 본 repo�
 | C6 concurrent | stretch | **~81–87 tok/s** | concurrent 양호 |
 
 악화 확인된 패치(spin-wait 0.002, logits 64, expandable OFF 등)는 **적용하지 않음**.  
-다음 헤드룸: **NVFP4 lane** 또는 **W4A16-aligned draft**.
+선택 lane: **`SERVE_LANE=modelopt`** (`axiomofmind/GLM-5.3-Flash-W4A16-NVFP4`, 동일 DFlash2/Eagle3 overlay). 추가 헤드룸: **W4A16-aligned draft** 또는 별도 NVFP4 recipe.
 
 수치: [`docs/benchmark.md`](docs/benchmark.md) / [`benchmarks/RESULTS.md`](benchmarks/RESULTS.md) / [`evidence/final/optimization-report-20260912.md`](evidence/final/optimization-report-20260912.md)
+
+### SERVE_LANE (이미지 재빌드 없이 checkpoint 전환)
+
+| Lane | `.env` | Target | glm5next |
+|------|--------|--------|----------|
+| golden (기본) | `SERVE_LANE=golden` | `canada-quant/glm-5.3-w4a16-mtp` | `patches/glm5next_model.py` |
+| modelopt | `SERVE_LANE=modelopt` | `axiomofmind/GLM-5.3-Flash-W4A16-NVFP4` | 동일 Eagle3 overlay |
+
+`bash scripts/up.sh` → `.env.lane` 생성. API id는 `SERVED_MODEL_NAME`(`glm-5.3-flash`). 상세: [`docs/deployment.md`](docs/deployment.md).
 
 ### 핵심 설계 원칙
 

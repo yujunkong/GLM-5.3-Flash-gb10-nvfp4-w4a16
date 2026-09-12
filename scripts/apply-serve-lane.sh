@@ -22,7 +22,8 @@ case "$lane" in
   modelopt|modelopt-w4a16-nvfp4|axiomofmind)
     export SERVE_LANE=modelopt
     export MODEL="${MODEL_MODELOPT:-axiomofmind/GLM-5.3-Flash-W4A16-NVFP4}"
-    export GLM5NEXT_PATCH_HOST="${GLM5NEXT_PATCH_HOST_MODELOPT:-../runtime/glm5next/model.pristine.py}"
+    # Need SupportsEagle3 for DFlash2; image stock multimodal wrapper lacks it.
+    export GLM5NEXT_PATCH_HOST="${GLM5NEXT_PATCH_HOST_MODELOPT:-../patches/glm5next_model.py}"
     ;;
   *)
     echo "[lane] ERROR: unknown SERVE_LANE='$lane' (use golden|modelopt)" >&2

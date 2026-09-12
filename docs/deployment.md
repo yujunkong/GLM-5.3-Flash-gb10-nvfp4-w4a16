@@ -24,6 +24,27 @@ MENTAT_NODE_IP=192.168.100.20
 MENTAT_PEERS=192.168.100.10:6379
 ```
 
+### SERVE_LANE (checkpoint switch, no image rebuild)
+
+`scripts/up.sh` sources `scripts/apply-serve-lane.sh`, which writes gitignored `.env.lane`
+(`SERVE_LANE`, `MODEL`, `GLM5NEXT_PATCH_HOST`) for head+worker compose.
+
+| `SERVE_LANE` | Target Hub id | glm5next overlay |
+|--------------|---------------|------------------|
+| `golden` (default) | `canada-quant/glm-5.3-w4a16-mtp` | `patches/glm5next_model.py` (Eagle3) |
+| `modelopt` | `axiomofmind/GLM-5.3-Flash-W4A16-NVFP4` | same Eagle3 overlay (stock image multimodal lacks `SupportsEagle3`) |
+
+```bash
+# ModelOpt W4A16_NVFP4
+# in .env: SERVE_LANE=modelopt
+./scripts/up.sh
+# API model id remains SERVED_MODEL_NAME (default glm-5.3-flash);
+# /v1/models root shows axiomofmind/...
+```
+
+Draft stays `DRAFT_MODEL` (default `incoai/GLM-5.3-Flash-DFlash2`). First modelopt
+cold start may download weights into `HOST_CACHE`.
+
 ## Build image (once per node, or build once and docker save/load)
 
 ```bash

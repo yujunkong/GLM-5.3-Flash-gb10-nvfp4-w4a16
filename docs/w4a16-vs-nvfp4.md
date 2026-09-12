@@ -10,7 +10,7 @@ Sources (no speculation):
 
 | | W4A16 (this repo) | NVFP4 (sibling recipe) |
 |--|-------------------|-------------------------|
-| Target weights | Hub `canada-quant/glm-5.3-w4a16-mtp` | Host path `RedHatAI/GLM-5.3-Flash-NVFP4` style (`MODEL_HOST_PATH`, refuse ModelOpt unless override) |
+| Target weights | Hub `canada-quant/glm-5.3-w4a16-mtp` (default); optional `SERVE_LANE=modelopt` → `axiomofmind/GLM-5.3-Flash-W4A16-NVFP4` | Host path `RedHatAI/GLM-5.3-Flash-NVFP4` style (`MODEL_HOST_PATH`, refuse ModelOpt unless override) |
 | Draft | Hub `incoai/GLM-5.3-Flash-DFlash2` | Local `/models/dflash2-draft` bind (same DFlash2 family) |
 | Spec config | `method=dflash`, `num_speculative_tokens=7` | Same JSON shape in `launch-glm53-vllm-tp2-dflash2.sh` |
 | Target model code | Overlay `patches/glm5next_model.py` → `vllm/models/glm5next/nvidia/model.py` | Day-0 image `glm5_next` + recipe overlays |
@@ -62,7 +62,7 @@ No separate W4A16-only rejection sampler file in this repo.
 
 | | W4A16 | NVFP4 |
 |--|-------|-------|
-| Weight quant | W4A16-MTP (canada-quant checkpoint) | NVFP4 (RedHatAI path; script rejects ModelOpt) |
+| Weight quant | W4A16-MTP (canada-quant) or ModelOpt W4A16_NVFP4 via `SERVE_LANE=modelopt` | NVFP4 (RedHatAI path; script rejects ModelOpt) |
 | MoE backend | `marlin` | `marlin` |
 | Dense MLP | Overlay forces BF16 path in `glm5next_model.py` (W4A16 KEEP) | NVFP4 native path on day-0 image |
 

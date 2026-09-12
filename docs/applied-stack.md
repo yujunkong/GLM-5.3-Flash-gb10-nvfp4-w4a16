@@ -24,7 +24,9 @@ Concurrent C6 (~80+ tok/s) OK. Primary gates unmet; **stability Golden finalized
 
 ### Models
 
-- Target: `canada-quant/glm-5.3-w4a16-mtp`
+- Target (golden): `canada-quant/glm-5.3-w4a16-mtp`
+- Target (optional): `SERVE_LANE=modelopt` → `axiomofmind/GLM-5.3-Flash-W4A16-NVFP4`
+  (same `patches/glm5next_model.py` Eagle3 overlay; see `docs/deployment.md`)
 - Draft: `incoai/GLM-5.3-Flash-DFlash2`
 - Spec: dflash, K=7
 
@@ -69,8 +71,8 @@ See [`docs/performance.md`](performance.md) §4 — spin-wait 0.002, logits 64, 
 
 | Priority | Action |
 |----------|--------|
-| P0 | W4A16-aligned draft or NVFP4 lane |
-| P1 | Re-measure soak/accept after draft/target change |
+| P0 | Re-measure soak/accept on `SERVE_LANE=modelopt`; W4A16-aligned draft |
+| P1 | Compare modelopt vs golden TPS/accept; keep golden as default until gates improve |
 | Avoid | Rejected table; chasing 60 tok/s via unproven patches |
 
 ## Related

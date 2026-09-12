@@ -1,5 +1,14 @@
 # Changelog
 
+## SERVE_LANE=modelopt — 2026-09-12
+
+- Optional checkpoint lane (same image, no rebuild): `SERVE_LANE=modelopt` →
+  `axiomofmind/GLM-5.3-Flash-W4A16-NVFP4`.
+- DFlash2 requires Eagle3: modelopt uses `patches/glm5next_model.py` (not image
+  stock `runtime/glm5next/model.pristine.py`, which lacks `SupportsEagle3`).
+- Switch via `.env` + `bash scripts/up.sh`; materializes `.env.lane` for worker.
+- Default production remains `SERVE_LANE=golden` / `v1.0.0-golden`.
+
 ## v1.0.0-golden — 2026-09-12
 
 - **W4A16 + DFlash2 production configuration finalized** for 2× DGX Spark / GB10 / SM121 (TP=2).
