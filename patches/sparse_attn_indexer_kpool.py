@@ -47,6 +47,34 @@ logger = init_logger(__name__)
 
 RADIX_TOPK_WORKSPACE_SIZE = 1024 * 1024
 
+
+def _workspace_kpool_topk_bufs(
+    num_rows: int,
+    select_k: int,
+    *,
+    with_radix_workspace: bool,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+    """Reuse engine workspace for kpool top-k dst + int64 ids (and optional radix WS).
+
+    Decode/prefill previously did ``torch.full`` + ``.to(int64)`` every step for the
+    same (num_rows, select_k) shapes under steady decode — that churns the CUDA
+    allocator on GB10 unified memory. Workspace views keep identical fill/-1 and
+    copy semantics while avoiding per-step cudaMalloc.
+    """
+    shapes: list[tuple[tuple[int, ...], torch.dtype]] = [
+        ((num_rows, select_k), torch.int32),
+        ((num_rows, select_k), torch.int64),
+    ]
+    if with_radix_workspace:
+        shapes.append(((RADIX_TOPK_WORKSPACE_SIZE,), torch.uint8))
+    bufs = current_workspace_manager().get_simultaneous(*shapes)
+    pool_topk, pool_ids = bufs[0], bufs[1]
+    topk_workspace = bufs[2] if with_radix_workspace else None
+    # Comment: top-k kernels leave unfilled slots; match prior torch.full(..., -1).
+    pool_topk.fill_(-1)
+    return pool_topk, pool_ids, topk_workspace
+
+
 # MXFP4 layout: 2 values packed per byte, ue8m0 (1-byte) scale per block of 32.
 MXFP4_BLOCK_SIZE = 32
 
@@ -534,9 +562,11 @@ def sparse_attn_indexer_kpool(
             # so topk selects pools. We pick topk_tokens // kpool pools then
             # expand each pool back to its kpool constituent tokens.
             select_k = topk_tokens // index_kpool if index_kpool > 1 else topk_tokens
+            pool_ids: torch.Tensor | None = None
             if index_kpool > 1:
-                pool_topk = torch.full(
-                    (num_rows, select_k), -1, dtype=torch.int32, device=logits.device
+                # Comment: reuse workspace instead of per-chunk torch.full/.to.
+                pool_topk, pool_ids, _ = _workspace_kpool_topk_bufs(
+                    num_rows, select_k, with_radix_workspace=False
                 )
                 topk_dst = pool_topk
             else:
@@ -568,7 +598,8 @@ def sparse_attn_indexer_kpool(
                 )
 
             if index_kpool > 1:
-                pool_ids = pool_topk.to(torch.int64)
+                assert pool_ids is not None
+                pool_ids.copy_(pool_topk)
                 if positions is not None:
                     # Fused expand-pools + append-tail into one Triton kernel
                     # (replaces ~25 elementwise ops). seq_len is token-granular
@@ -799,26 +830,33 @@ def sparse_attn_indexer_kpool(
         # kpool: logits are pool-granular -> select topk_tokens//kpool pools,
         # then expand each pool back to its kpool tokens.
         select_k = topk_tokens // index_kpool if index_kpool > 1 else topk_tokens
+        # SM121/GB10 (48 SMs, 99KB smem): persistent_topk oversubscribes past
+        # ~24K ctx and its FilteredTopK fallback needs 128KB smem -> hard raise.
+        # Route small-SM parts to top_k_per_row_decode instead.
+        use_persistent_topk = (
+            current_platform.is_cuda()
+            and select_k in (512, 1024, 2048)
+            and torch.cuda.get_device_properties(0).multi_processor_count >= 78
+        )
+        pool_ids: torch.Tensor | None = None
+        topk_workspace: torch.Tensor | None = None
         if index_kpool > 1:
-            pool_topk = torch.full(
-                (num_rows, select_k), -1, dtype=torch.int32, device=logits.device
+            # Comment: one workspace grab for pool dst + int64 ids (+ radix WS).
+            pool_topk, pool_ids, topk_workspace = _workspace_kpool_topk_bufs(
+                num_rows,
+                select_k,
+                with_radix_workspace=use_persistent_topk,
             )
             topk_dst = pool_topk
         else:
             topk_dst = topk_indices_buffer[:num_padded_tokens, :topk_tokens]
+            if use_persistent_topk:
+                (topk_workspace,) = current_workspace_manager().get_simultaneous(
+                    ((RADIX_TOPK_WORKSPACE_SIZE,), torch.uint8),
+                )
 
-        # SM121/GB10 (48 SMs, 99KB smem): persistent_topk oversubscribes past
-        # ~24K ctx and its FilteredTopK fallback needs 128KB smem -> hard raise.
-        # Route small-SM parts to top_k_per_row_decode instead.
-        if (
-            current_platform.is_cuda()
-            and select_k in (512, 1024, 2048)
-            and torch.cuda.get_device_properties(0).multi_processor_count >= 78
-        ):
-            workspace_manager = current_workspace_manager()
-            (topk_workspace,) = workspace_manager.get_simultaneous(
-                ((RADIX_TOPK_WORKSPACE_SIZE,), torch.uint8),
-            )
+        if use_persistent_topk:
+            assert topk_workspace is not None
             torch.ops._C.persistent_topk(
                 logits,
                 seq_lens,
@@ -853,7 +891,8 @@ def sparse_attn_indexer_kpool(
 
         # Resolve to token-level indices in the output buffer.
         if index_kpool > 1:
-            pool_ids = pool_topk.to(torch.int64)
+            assert pool_ids is not None
+            pool_ids.copy_(pool_topk)
             n = pool_topk.shape[0]
             # NOTE: decode_metadata.seq_lens is POOL-granular (divided by
             # compress_ratio in the indexer metadata builder) because it feeds
