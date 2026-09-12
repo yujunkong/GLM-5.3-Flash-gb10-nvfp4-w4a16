@@ -1,0 +1,275 @@
+{
+  "rows": [
+    {
+      "ttft_s": 0.292,
+      "total_s": 13.5953,
+      "completion_tokens": 512,
+      "decode_tok_s": 38.411,
+      "snap": {
+        "gpu_clock_mhz": 2398.0,
+        "gpu_temp_c": 50.0,
+        "power_w": 25.6
+      },
+      "n": 1,
+      "wall_mono": 1789192162.5171525
+    },
+    {
+      "ttft_s": 0.2813,
+      "total_s": 15.7929,
+      "completion_tokens": 512,
+      "decode_tok_s": 32.943,
+      "snap": {
+        "gpu_clock_mhz": 2398.0,
+        "gpu_temp_c": 53.0,
+        "power_w": 26.34
+      },
+      "n": 2,
+      "wall_mono": 1789192178.3657632
+    },
+    {
+      "ttft_s": 0.301,
+      "total_s": 18.2771,
+      "completion_tokens": 512,
+      "decode_tok_s": 28.427,
+      "snap": {
+        "gpu_clock_mhz": 2392.0,
+        "gpu_temp_c": 55.0,
+        "power_w": 26.74
+      },
+      "n": 3,
+      "wall_mono": 1789192196.6731043
+    },
+    {
+      "ttft_s": 0.2544,
+      "total_s": 18.4295,
+      "completion_tokens": 512,
+      "decode_tok_s": 28.115,
+      "snap": {
+        "gpu_clock_mhz": 2392.0,
+        "gpu_temp_c": 56.0,
+        "power_w": 27.08
+      },
+      "n": 4,
+      "wall_mono": 1789192215.1587381
+    },
+    {
+      "ttft_s": 0.2972,
+      "total_s": 16.3369,
+      "completion_tokens": 512,
+      "decode_tok_s": 31.859,
+      "snap": {
+        "gpu_clock_mhz": 2392.0,
+        "gpu_temp_c": 57.0,
+        "power_w": 27.07
+      },
+      "n": 5,
+      "wall_mono": 1789192231.521962
+    },
+    {
+      "ttft_s": 0.2471,
+      "total_s": 14.506,
+      "completion_tokens": 512,
+      "decode_tok_s": 35.837,
+      "snap": {
+        "gpu_clock_mhz": 2392.0,
+        "gpu_temp_c": 58.0,
+        "power_w": 27.47
+      },
+      "n": 6,
+      "wall_mono": 1789192246.0862002
+    },
+    {
+      "ttft_s": 0.3024,
+      "total_s": 15.642,
+      "completion_tokens": 512,
+      "decode_tok_s": 33.312,
+      "snap": {
+        "gpu_clock_mhz": 2392.0,
+        "gpu_temp_c": 58.0,
+        "power_w": 27.59
+      },
+      "n": 7,
+      "wall_mono": 1789192261.7846413
+    },
+    {
+      "ttft_s": 0.2996,
+      "total_s": 15.1717,
+      "completion_tokens": 512,
+      "decode_tok_s": 34.36,
+      "snap": {
+        "gpu_clock_mhz": 2392.0,
+        "gpu_temp_c": 59.0,
+        "power_w": 27.44
+      },
+      "n": 8,
+      "wall_mono": 1789192277.0114725
+    },
+    {
+      "ttft_s": 0.2957,
+      "total_s": 14.5346,
+      "completion_tokens": 512,
+      "decode_tok_s": 35.888,
+      "snap": {
+        "gpu_clock_mhz": 2392.0,
+        "gpu_temp_c": 59.0,
+        "power_w": 27.55
+      },
+      "n": 9,
+      "wall_mono": 1789192291.6183648
+    },
+    {
+      "ttft_s": 0.2873,
+      "total_s": 16.6041,
+      "completion_tokens": 512,
+      "decode_tok_s": 31.317,
+      "snap": {
+        "gpu_clock_mhz": 2392.0,
+        "gpu_temp_c": 59.0,
+        "power_w": 27.43
+      },
+      "n": 10,
+      "wall_mono": 1789192308.2537763
+    },
+    {
+      "ttft_s": 0.2435,
+      "total_s": 15.0465,
+      "completion_tokens": 512,
+      "decode_tok_s": 34.52,
+      "snap": {
+        "gpu_clock_mhz": 2392.0,
+        "gpu_temp_c": 59.0,
+        "power_w": 27.61
+      },
+      "n": 11,
+      "wall_mono": 1789192323.3548498
+    },
+    {
+      "ttft_s": 0.3032,
+      "total_s": 16.0483,
+      "completion_tokens": 512,
+      "decode_tok_s": 32.455,
+      "snap": {
+        "gpu_clock_mhz": 2392.0,
+        "gpu_temp_c": 60.0,
+        "power_w": 27.77
+      },
+      "n": 12,
+      "wall_mono": 1789192339.4665287
+    },
+    {
+      "ttft_s": 0.2945,
+      "total_s": 14.602,
+      "completion_tokens": 512,
+      "decode_tok_s": 35.715,
+      "snap": {
+        "gpu_clock_mhz": 2392.0,
+        "gpu_temp_c": 60.0,
+        "power_w": 27.85
+      },
+      "n": 13,
+      "wall_mono": 1789192354.1251476
+    },
+    {
+      "ttft_s": 0.3073,
+      "total_s": 15.2408,
+      "completion_tokens": 512,
+      "decode_tok_s": 34.218,
+      "snap": {
+        "gpu_clock_mhz": 2392.0,
+        "gpu_temp_c": 60.0,
+        "power_w": 27.81
+      },
+      "n": 14,
+      "wall_mono": 1789192369.395913
+    },
+    {
+      "ttft_s": 0.2496,
+      "total_s": 15.2883,
+      "completion_tokens": 512,
+      "decode_tok_s": 33.979,
+      "snap": {
+        "gpu_clock_mhz": 2392.0,
+        "gpu_temp_c": 60.0,
+        "power_w": 27.89
+      },
+      "n": 15,
+      "wall_mono": 1789192384.7402225
+    },
+    {
+      "ttft_s": 0.3113,
+      "total_s": 15.1518,
+      "completion_tokens": 512,
+      "decode_tok_s": 34.433,
+      "snap": {
+        "gpu_clock_mhz": 2392.0,
+        "gpu_temp_c": 60.0,
+        "power_w": 28.05
+      },
+      "n": 16,
+      "wall_mono": 1789192399.9540846
+    },
+    {
+      "ttft_s": 0.2953,
+      "total_s": 16.5331,
+      "completion_tokens": 512,
+      "decode_tok_s": 31.47,
+      "snap": {
+        "gpu_clock_mhz": 2392.0,
+        "gpu_temp_c": 60.0,
+        "power_w": 28.04
+      },
+      "n": 17,
+      "wall_mono": 1789192416.5158556
+    },
+    {
+      "ttft_s": 0.2551,
+      "total_s": 16.3243,
+      "completion_tokens": 512,
+      "decode_tok_s": 31.8,
+      "snap": {
+        "gpu_clock_mhz": 2392.0,
+        "gpu_temp_c": 61.0,
+        "power_w": 27.96
+      },
+      "n": 18,
+      "wall_mono": 1789192432.872416
+    },
+    {
+      "ttft_s": 0.2548,
+      "total_s": 16.0615,
+      "completion_tokens": 512,
+      "decode_tok_s": 32.328,
+      "snap": {
+        "gpu_clock_mhz": 2392.0,
+        "gpu_temp_c": 60.0,
+        "power_w": 28.17
+      },
+      "n": 19,
+      "wall_mono": 1789192448.9965947
+    }
+  ],
+  "summary": {
+    "label": "ab-golden-before",
+    "minutes": 5.0,
+    "runs": 19,
+    "decode_tok_s_median": 33.312,
+    "decode_tok_s_mean": 33.2308947368421,
+    "decode_tok_s_min": 28.115,
+    "decode_tok_s_max": 38.411,
+    "decode_drift_pct": -4.19,
+    "gpu_temp_c_min": 50.0,
+    "gpu_temp_c_max": 61.0,
+    "gpu_temp_c_delta": 11.0,
+    "gpu_clock_mhz_median": 2392.0,
+    "accept": {
+      "drafted": 17689.0,
+      "accepted": 7282.0,
+      "ratio": 0.4116682684153994
+    },
+    "snap_end": {
+      "gpu_clock_mhz": 2392.0,
+      "gpu_temp_c": 60.0,
+      "power_w": 28.2
+    }
+  }
+}

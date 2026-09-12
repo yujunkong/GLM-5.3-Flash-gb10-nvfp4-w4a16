@@ -1,0 +1,21 @@
+spec_decode metrics found:
+  vllm:spec_decode_num_accepted_tokens_created = 1789185027.2146125
+  vllm:spec_decode_num_accepted_tokens_per_pos_created = 1789185027.2190118
+  vllm:spec_decode_num_accepted_tokens_total = 1146.0
+  vllm:spec_decode_num_draft_tokens_created = 1789185027.2132156
+  vllm:spec_decode_num_draft_tokens_total = 2758.0
+  vllm:spec_decode_num_drafts_created = 1789185027.2118144
+  vllm:spec_decode_num_drafts_total = 394.0
+per_pos accepted (labeled):
+  pos0: accepted=316 rate_vs_drafts=0.802 cond=nan
+  pos1: accepted=249 rate_vs_drafts=0.632 cond=0.788
+  pos2: accepted=183 rate_vs_drafts=0.464 cond=0.735
+  pos3: accepted=145 rate_vs_drafts=0.368 cond=0.792
+  pos4: accepted=113 rate_vs_drafts=0.287 cond=0.779
+  pos5: accepted=81 rate_vs_drafts=0.206 cond=0.717
+  pos6: accepted=59 rate_vs_drafts=0.150 cond=0.728
+dflash2_acc HTTP /metrics: (none — worker gauges not visible on API process)
+dflash2_acc textfile: (none at /home/yujunkong/logs/glm53/dflash2-acc.prom — expected when DFLASH2_ACC_PROBE=0)
+
+drafted=2758 accepted=1146 ratio=0.416
+check band manually (W4A16 Golden soak typically ~0.43–0.44)
